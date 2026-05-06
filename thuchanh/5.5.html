@@ -1,0 +1,850 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>THE BÁO: [Phần 5.5] Các tính năng bảo mật Layer 2</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        /* Custom Scrollbar for CLI */
+        .cli-scrollbar::-webkit-scrollbar { width: 8px; }
+        .cli-scrollbar::-webkit-scrollbar-track { background: #1a202c; }
+        .cli-scrollbar::-webkit-scrollbar-thumb { background: #4a5568; border-radius: 4px; }
+        .cli-scrollbar::-webkit-scrollbar-thumb:hover { background: #718096; }
+        
+        /* Packet Animation Classes */
+        .packet {
+            position: absolute;
+            width: 24px;
+            height: 16px;
+            border-radius: 3px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 10px;
+            color: white;
+            font-weight: bold;
+            z-index: 20;
+            transition: all 1.5s linear;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+        }
+        .packet-dhcp { background-color: #3b82f6; } /* Blue */
+        .packet-dhcp-rogue { background-color: #ef4444; } /* Red */
+        .packet-arp { background-color: #eab308; color: black; } /* Yellow */
+        .packet-data { background-color: #22c55e; } /* Green */
+
+        /* Pulsing effect for blocked port */
+        @keyframes flashRed {
+            0% { background-color: #ef4444; box-shadow: 0 0 10px #ef4444; }
+            50% { background-color: #991b1b; box-shadow: 0 0 2px #991b1b; }
+            100% { background-color: #ef4444; box-shadow: 0 0 10px #ef4444; }
+        }
+        .port-err-disable { animation: flashRed 1s infinite; }
+        
+        /* Smooth state transitions */
+        .node-icon { transition: all 0.3s ease; }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-800 min-h-screen flex flex-col font-sans">
+
+    <!-- Sticky Header -->
+    <header class="sticky top-0 z-50 bg-blue-900 text-white shadow-md border-b-4 border-yellow-500">
+        <div class="container mx-auto px-4 py-3 flex items-center justify-between">
+            <h1 class="text-lg md:text-xl font-bold uppercase tracking-wide">
+                <i class="fa-solid fa-shield-halved mr-2"></i> THE BÁO: [Phần 5.5] Các tính năng bảo mật Layer 2
+            </h1>
+            <button id="btnReset" class="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded text-sm font-semibold transition shadow">
+                <i class="fa-solid fa-rotate-right mr-1"></i> Reset Mô phỏng
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Content (Flexible expanding area) -->
+    <main class="flex-grow container mx-auto px-4 py-6 flex flex-col gap-6">
+        
+        <!-- TOPOLOGY SECTION -->
+        <section class="bg-white rounded-lg shadow-lg border border-gray-200 overflow-hidden flex flex-col">
+            <div class="bg-gray-800 text-white px-4 py-2 text-sm font-semibold flex justify-between items-center">
+                <span><i class="fa-solid fa-network-wired mr-2"></i> Sơ đồ Mạng (Topology)</span>
+                <span class="text-xs text-gray-400 font-normal">Vuốt/Cuộn vùng này nếu bị khuất</span>
+            </div>
+            
+            <!-- Map Container: 50vh on mobile, fixed height on desktop, scrollable -->
+            <div class="h-[50vh] md:h-[450px] w-full overflow-auto touch-pan-x touch-pan-y relative bg-slate-50 topology-scroll-area cursor-grab active:cursor-grabbing" id="topologyContainer">
+                
+                <!-- Fixed size canvas to prevent distortion -->
+                <div class="w-[800px] h-[450px] relative mx-auto" id="canvas">
+                    <!-- Lines (Links) -->
+                    <!-- Switch to Server (Fa0/3) -->
+                    <div class="absolute bg-gray-400 w-1 h-[120px] left-[400px] top-[70px] origin-top transform z-0" id="link-fa03"></div>
+                    <!-- Switch to PC (Fa0/1) -->
+                    <div class="absolute bg-gray-400 w-1 h-[180px] left-[400px] top-[230px] origin-top transform -rotate-45 z-0" id="link-fa01"></div>
+                    <!-- Switch to Attacker (Fa0/2) -->
+                    <div class="absolute bg-gray-400 w-1 h-[180px] left-[400px] top-[230px] origin-top transform rotate-45 z-0" id="link-fa02"></div>
+
+                    <!-- NODES -->
+                    <!-- 1. Legitimate DHCP Server -->
+                    <div class="absolute top-[20px] left-[360px] flex flex-col items-center w-[80px]" id="node-server">
+                        <div class="w-16 h-16 bg-green-100 border-2 border-green-600 rounded-lg flex items-center justify-center text-green-700 shadow-md node-icon">
+                            <i class="fa-solid fa-server text-3xl"></i>
+                        </div>
+                        <span class="text-xs font-bold mt-1 text-center leading-tight">DHCP Server<br>(Chính hãng)</span>
+                        <span class="text-[10px] bg-gray-200 px-1 rounded mt-1">IP: 192.168.1.100</span>
+                    </div>
+
+                    <!-- 2. Core Switch -->
+                    <div class="absolute top-[180px] left-[340px] flex flex-col items-center w-[120px]" id="node-switch">
+                        <div class="w-20 h-16 bg-blue-100 border-2 border-blue-600 rounded flex items-center justify-center text-blue-700 shadow-lg relative node-icon">
+                            <i class="fa-solid fa-arrows-left-right text-3xl"></i>
+                            
+                            <!-- Ports Indicators -->
+                            <div class="absolute -top-2 left-[36px] w-3 h-3 rounded-full bg-green-500 border border-white" title="Fa0/3 (Server)"></div>
+                            <div class="absolute -bottom-2 left-[10px] w-3 h-3 rounded-full bg-green-500 border border-white" id="port-fa01-led" title="Fa0/1 (PC)"></div>
+                            <div class="absolute -bottom-2 right-[10px] w-3 h-3 rounded-full bg-green-500 border border-white" id="port-fa02-led" title="Fa0/2 (Attacker)"></div>
+                        </div>
+                        <span class="text-sm font-bold mt-2">Switch L2</span>
+                        <div class="text-[10px] text-gray-500 flex justify-between w-full mt-1 px-2">
+                            <span>Fa0/1</span>
+                            <span>Fa0/2</span>
+                        </div>
+                        <div class="text-[10px] text-gray-500 absolute -top-5 left-[42px]">Fa0/3</div>
+                    </div>
+
+                    <!-- 3. Legitimate PC -->
+                    <div class="absolute top-[350px] left-[230px] flex flex-col items-center w-[80px]" id="node-pc">
+                        <div class="w-14 h-14 bg-gray-100 border-2 border-gray-600 rounded flex items-center justify-center text-gray-700 shadow-md relative node-icon" id="icon-pc">
+                            <i class="fa-solid fa-desktop text-2xl"></i>
+                        </div>
+                        <span class="text-xs font-bold mt-1">User PC</span>
+                        <span class="text-[10px] bg-gray-200 px-1 rounded mt-1" id="lbl-pc-mac">MAC: AA:AA</span>
+                        <span class="text-[10px] bg-blue-100 text-blue-800 px-1 rounded mt-1 hidden" id="lbl-pc-ip">IP: ?</span>
+                    </div>
+
+                    <!-- 4. Attacker -->
+                    <div class="absolute top-[350px] left-[490px] flex flex-col items-center w-[80px]" id="node-attacker">
+                        <div class="w-14 h-14 bg-red-50 border-2 border-red-600 rounded flex items-center justify-center text-red-600 shadow-md relative node-icon">
+                            <i class="fa-solid fa-user-ninja text-2xl"></i>
+                        </div>
+                        <span class="text-xs font-bold mt-1 text-red-600">Kẻ tấn công</span>
+                        <span class="text-[10px] bg-gray-200 px-1 rounded mt-1">MAC: BB:BB</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- CONTROL & INTERACTION PANEL -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            
+            <!-- Left: Settings & Actions -->
+            <section class="flex flex-col gap-4">
+                <!-- Config Panel -->
+                <div class="bg-white rounded-lg shadow border border-gray-200 p-4">
+                    <h2 class="text-lg font-bold mb-3 border-b pb-2"><i class="fa-solid fa-sliders mr-2"></i>Bảng Điều khiển Cấu hình</h2>
+                    <p class="text-sm text-gray-600 mb-4">Nhấn nút để bật/tắt (Hệ thống sẽ tự gõ lệnh tương ứng vào Console).</p>
+                    
+                    <div class="space-y-3">
+                        <!-- DHCP Snooping -->
+                        <div class="flex items-center justify-between p-2 bg-gray-50 rounded border">
+                            <div>
+                                <h3 class="font-bold text-sm">1. DHCP Snooping</h3>
+                                <p class="text-[11px] text-gray-500">Chặn DHCP giả mạo. Cổng Fa0/3 (Server) sẽ được Trust.</p>
+                            </div>
+                            <button id="btnToggleSnooping" class="w-12 h-6 rounded-full bg-gray-300 relative transition-colors duration-300 focus:outline-none">
+                                <div class="w-4 h-4 bg-white rounded-full absolute top-1 left-1 transition-transform duration-300 transform" id="knobSnooping"></div>
+                            </button>
+                        </div>
+                        
+                        <!-- DAI -->
+                        <div class="flex items-center justify-between p-2 bg-gray-50 rounded border">
+                            <div>
+                                <h3 class="font-bold text-sm">2. Dynamic ARP Inspection</h3>
+                                <p class="text-[11px] text-gray-500">Chặn ARP giả (yêu cầu DHCP Snooping bật trước).</p>
+                            </div>
+                            <button id="btnToggleDAI" class="w-12 h-6 rounded-full bg-gray-300 relative transition-colors duration-300 focus:outline-none">
+                                <div class="w-4 h-4 bg-white rounded-full absolute top-1 left-1 transition-transform duration-300 transform" id="knobDAI"></div>
+                            </button>
+                        </div>
+
+                        <!-- Port Security -->
+                        <div class="flex items-center justify-between p-2 bg-gray-50 rounded border">
+                            <div>
+                                <h3 class="font-bold text-sm">3. Port Security (trên Fa0/1)</h3>
+                                <p class="text-[11px] text-gray-500">Khóa cổng nếu phát hiện MAC lạ. (Sticky MAC + Shutdown)</p>
+                            </div>
+                            <button id="btnTogglePortSec" class="w-12 h-6 rounded-full bg-gray-300 relative transition-colors duration-300 focus:outline-none">
+                                <div class="w-4 h-4 bg-white rounded-full absolute top-1 left-1 transition-transform duration-300 transform" id="knobPortSec"></div>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Attack Scenarios -->
+                <div class="bg-red-50 rounded-lg shadow border border-red-200 p-4">
+                    <h2 class="text-lg font-bold text-red-700 mb-3 border-b border-red-200 pb-2"><i class="fa-solid fa-biohazard mr-2"></i>Mô phỏng Tấn công & Kiểm tra</h2>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <button id="btnAttackDHCP" class="bg-white border border-red-300 hover:bg-red-100 text-red-700 py-2 px-3 rounded text-sm font-semibold transition">
+                            <i class="fa-solid fa-server mr-1"></i> Attacker: Gửi Rogue DHCP
+                        </button>
+                        <button id="btnAttackARP" class="bg-white border border-yellow-400 hover:bg-yellow-100 text-yellow-700 py-2 px-3 rounded text-sm font-semibold transition">
+                            <i class="fa-solid fa-mask mr-1"></i> Attacker: Spoof ARP (MITM)
+                        </button>
+                        <button id="btnPCRequestDHCP" class="bg-white border border-blue-300 hover:bg-blue-100 text-blue-700 py-2 px-3 rounded text-sm font-semibold transition">
+                            <i class="fa-solid fa-laptop-code mr-1"></i> User PC: Xin IP (DHCP Req)
+                        </button>
+                        <button id="btnChangeMAC" class="bg-white border border-gray-400 hover:bg-gray-200 text-gray-800 py-2 px-3 rounded text-sm font-semibold transition">
+                            <i class="fa-solid fa-shuffle mr-1"></i> User PC: Đổi MAC lạ (Test PS)
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Right: CLI Console -->
+            <section class="bg-[#1a202c] rounded-lg shadow-xl flex flex-col border-2 border-gray-600 overflow-hidden min-h-[400px]">
+                <div class="bg-gray-300 px-3 py-1 flex items-center justify-between">
+                    <div class="flex space-x-2">
+                        <div class="w-3 h-3 rounded-full bg-red-500"></div>
+                        <div class="w-3 h-3 rounded-full bg-yellow-500"></div>
+                        <div class="w-3 h-3 rounded-full bg-green-500"></div>
+                    </div>
+                    <span class="text-xs font-mono font-bold text-gray-700">Switch Console (TTY)</span>
+                    <span></span>
+                </div>
+                
+                <div id="cliOutput" class="flex-grow p-4 font-mono text-[13px] text-green-400 leading-relaxed overflow-y-auto cli-scrollbar h-[350px]">
+                    <div class="text-gray-400 mb-2">
+                        Cisco IOS Software, C2960 Software (C2960-LANBASEK9-M), Version 15.0(2)SE, RELEASE SOFTWARE (fc1)<br>
+                        THE BAO Switch Simulator v1.0<br>
+                        Nhập lệnh hoặc dùng Nút bấm bên trái để tự động cấu hình.
+                    </div>
+                    <!-- CLI lines will be appended here -->
+                </div>
+                
+                <div class="p-2 bg-gray-900 border-t border-gray-700 flex items-center">
+                    <span id="cliPrompt" class="font-mono text-green-400 mr-2">Switch></span>
+                    <input type="text" id="cliInput" class="flex-grow bg-transparent border-none outline-none font-mono text-green-400 focus:ring-0" autocomplete="off" spellcheck="false">
+                </div>
+            </section>
+        </div>
+    </main>
+
+    <!-- Footer to prove scrollability -->
+    <footer class="bg-black text-white text-center py-6 mt-8 shadow-inner">
+        <p class="font-mono text-sm tracking-widest text-gray-400">Tiktok: @thebaovn</p>
+        <p class="mt-2 text-lg">Thiết kế bởi <span class="font-bold text-yellow-400">THE BÁO</span> &copy; 2026</p>
+    </footer>
+
+    <!-- JAVASCRIPT LOGIC -->
+    <script>
+        /** ==========================================
+         * STATE MANAGEMENT
+         * ========================================== */
+        const state = {
+            dhcpSnooping: {
+                enabled: false,
+                trustedPorts: [] // e.g., 'Fa0/3'
+            },
+            dai: {
+                enabled: false
+            },
+            portSecurity: {
+                enabled: false,
+                mac: 'AA:AA', // Sticky MAC recorded
+                violation: 'shutdown',
+                portState: 'up' // 'up' or 'down'
+            },
+            pc: {
+                mac: 'AA:AA',
+                ip: null
+            },
+            bindingTable: [] // [{mac: 'AA:AA', ip: '192.168.1.50', port: 'Fa0/1'}]
+        };
+
+        // CLI State Machine
+        let cliMode = 'user'; // 'user' (>), 'priv' (#), 'conf' ((config)#), 'if' ((config-if)#)
+        let currentInterface = null;
+        let switchName = "Switch";
+
+        /** ==========================================
+         * DOM ELEMENTS
+         * ========================================== */
+        const cliOutput = document.getElementById('cliOutput');
+        const cliInput = document.getElementById('cliInput');
+        const cliPrompt = document.getElementById('cliPrompt');
+        const canvas = document.getElementById('canvas');
+        
+        // Buttons
+        const btnToggleSnooping = document.getElementById('btnToggleSnooping');
+        const knobSnooping = document.getElementById('knobSnooping');
+        const btnToggleDAI = document.getElementById('btnToggleDAI');
+        const knobDAI = document.getElementById('knobDAI');
+        const btnTogglePortSec = document.getElementById('btnTogglePortSec');
+        const knobPortSec = document.getElementById('knobPortSec');
+        
+        const btnAttackDHCP = document.getElementById('btnAttackDHCP');
+        const btnAttackARP = document.getElementById('btnAttackARP');
+        const btnPCRequestDHCP = document.getElementById('btnPCRequestDHCP');
+        const btnChangeMAC = document.getElementById('btnChangeMAC');
+        const btnReset = document.getElementById('btnReset');
+
+        // Map Elements
+        const portFa01Led = document.getElementById('port-fa01-led');
+        const linkFa01 = document.getElementById('link-fa01');
+        const iconPc = document.getElementById('icon-pc');
+        const lblPcMac = document.getElementById('lbl-pc-mac');
+        const lblPcIp = document.getElementById('lbl-pc-ip');
+
+        // Scroll functionality for Topology (touch panning)
+        const topologyContainer = document.getElementById('topologyContainer');
+        let isDown = false;
+        let startX, startY, scrollLeft, scrollTop;
+
+        topologyContainer.addEventListener('mousedown', (e) => {
+            isDown = true;
+            startX = e.pageX - topologyContainer.offsetLeft;
+            startY = e.pageY - topologyContainer.offsetTop;
+            scrollLeft = topologyContainer.scrollLeft;
+            scrollTop = topologyContainer.scrollTop;
+        });
+        topologyContainer.addEventListener('mouseleave', () => { isDown = false; });
+        topologyContainer.addEventListener('mouseup', () => { isDown = false; });
+        topologyContainer.addEventListener('mousemove', (e) => {
+            if (!isDown) return;
+            e.preventDefault();
+            const x = e.pageX - topologyContainer.offsetLeft;
+            const y = e.pageY - topologyContainer.offsetTop;
+            const walkX = (x - startX) * 1.5;
+            const walkY = (y - startY) * 1.5;
+            topologyContainer.scrollLeft = scrollLeft - walkX;
+            topologyContainer.scrollTop = scrollTop - walkY;
+        });
+
+        /** ==========================================
+         * CLI LOGIC & OUTPUT
+         * ========================================== */
+        function updatePrompt() {
+            let promptText = switchName;
+            if (cliMode === 'user') promptText += '>';
+            else if (cliMode === 'priv') promptText += '#';
+            else if (cliMode === 'conf') promptText += '(config)#';
+            else if (cliMode === 'if') promptText += `(config-if)#`;
+            cliPrompt.innerText = promptText;
+        }
+
+        function printLog(text, type = 'normal') {
+            const div = document.createElement('div');
+            // Format HTML safely
+            text = text.replace(/\n/g, '<br>');
+            text = text.replace(/ /g, '&nbsp;');
+            div.innerHTML = text;
+            
+            if (type === 'cmd') {
+                div.className = 'font-bold text-white mt-1';
+            } else if (type === 'syslog') {
+                div.className = 'text-yellow-400';
+            } else if (type === 'error') {
+                div.className = 'text-red-400 font-bold';
+            } else {
+                div.className = 'text-green-400';
+            }
+            
+            cliOutput.appendChild(div);
+            cliOutput.scrollTop = cliOutput.scrollHeight;
+        }
+
+        // Programmatically type command (simulation)
+        async function runCommandScript(commands) {
+            // Disable input while script runs
+            cliInput.disabled = true;
+            for (let cmd of commands) {
+                printLog(`${cliPrompt.innerText} ${cmd}`, 'cmd');
+                processCommand(cmd, true); // true = simulated, don't re-trigger buttons
+                await new Promise(r => setTimeout(r, 400)); // Delay between commands
+            }
+            cliInput.disabled = false;
+            cliInput.focus();
+        }
+
+        function processCommand(cmd, isSimulated = false) {
+            cmd = cmd.trim().toLowerCase();
+            if (!cmd) return;
+            if (!isSimulated) printLog(`${cliPrompt.innerText} ${cmd}`, 'cmd');
+
+            const parts = cmd.split(' ').filter(p => p !== '');
+
+            // Global navigation
+            if (cmd === 'enable' || cmd === 'en') { cliMode = 'priv'; updatePrompt(); return; }
+            if (cmd === 'disable' && cliMode !== 'user') { cliMode = 'user'; updatePrompt(); return; }
+            if ((cmd === 'configure terminal' || cmd === 'conf t') && cliMode === 'priv') { cliMode = 'conf'; updatePrompt(); return; }
+            if (cmd === 'exit') {
+                if (cliMode === 'if') cliMode = 'conf';
+                else if (cliMode === 'conf') cliMode = 'priv';
+                else if (cliMode === 'priv') cliMode = 'user';
+                updatePrompt();
+                return;
+            }
+
+            // Commands handling
+            if (cliMode === 'user') {
+                printLog('% Lệnh không khả dụng ở chế độ User. Gõ "enable".', 'error');
+                return;
+            }
+
+            // Interface navigation
+            if (cliMode === 'conf' && cmd.startsWith('int') && parts.length >= 2) {
+                const iface = parts[1];
+                if (iface === 'fa0/1' || iface === 'fa0/2' || iface === 'fa0/3') {
+                    cliMode = 'if';
+                    currentInterface = iface;
+                    updatePrompt();
+                } else {
+                    printLog('% Invalid interface', 'error');
+                }
+                return;
+            }
+
+            // SHOW commands (Privilege)
+            if (cliMode === 'priv' && cmd.startsWith('show')) {
+                if (cmd === 'show ip dhcp snooping binding') {
+                    printLog('MacAddress&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;IpAddress&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Lease(sec)&nbsp;&nbsp;Type&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;VLAN&nbsp;&nbsp;Interface');
+                    printLog('------------------&nbsp;&nbsp;---------------&nbsp;&nbsp;----------&nbsp;&nbsp;-------------&nbsp;&nbsp;----&nbsp;&nbsp;--------------------');
+                    if (state.bindingTable.length === 0) {
+                        printLog('Không có dữ liệu (Table rỗng).');
+                    } else {
+                        state.bindingTable.forEach(b => {
+                            printLog(`${b.mac.padEnd(18)}  ${b.ip.padEnd(15)}  86400       dhcp-snooping   1     ${b.port}`);
+                        });
+                    }
+                } else if (cmd === 'show port-security interface fa0/1') {
+                    printLog(`Port Security&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;: ${state.portSecurity.enabled ? 'Enabled' : 'Disabled'}`);
+                    printLog(`Port Status&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;: ${state.portSecurity.portState === 'up' ? 'Secure-up' : 'Secure-down'}`);
+                    printLog(`Violation Mode&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;: Shutdown`);
+                    printLog(`Last Source Address:Vlan&nbsp;&nbsp;&nbsp;: ${state.pc.mac}:1`);
+                } else {
+                    printLog('% Incomplete or unknown show command', 'error');
+                }
+                return;
+            }
+
+            // Config commands
+            if (cliMode === 'conf') {
+                if (cmd === 'ip dhcp snooping') {
+                    state.dhcpSnooping.enabled = true;
+                    if (!isSimulated) syncUI();
+                    return;
+                }
+                if (cmd === 'no ip dhcp snooping') {
+                    state.dhcpSnooping.enabled = false;
+                    if (!isSimulated) syncUI();
+                    return;
+                }
+                if (cmd === 'ip arp inspection vlan 1') {
+                    if (!state.dhcpSnooping.enabled) {
+                        printLog('% Lỗi: Cần bật DHCP Snooping trước khi bật DAI.', 'error');
+                        return;
+                    }
+                    state.dai.enabled = true;
+                    if (!isSimulated) syncUI();
+                    return;
+                }
+                if (cmd === 'no ip arp inspection vlan 1') {
+                    state.dai.enabled = false;
+                    if (!isSimulated) syncUI();
+                    return;
+                }
+            }
+
+            // Interface config commands
+            if (cliMode === 'if') {
+                if (cmd === 'ip dhcp snooping trust') {
+                    if (!state.dhcpSnooping.trustedPorts.includes(currentInterface)) {
+                        state.dhcpSnooping.trustedPorts.push(currentInterface);
+                    }
+                    return;
+                }
+                if (cmd === 'switchport port-security') {
+                    if (currentInterface === 'fa0/1') {
+                        state.portSecurity.enabled = true;
+                        if (!isSimulated) syncUI();
+                    } else {
+                        printLog('% Trong mô phỏng này, chỉ hỗ trợ Port Security trên Fa0/1', 'error');
+                    }
+                    return;
+                }
+                if (cmd === 'no switchport port-security') {
+                    if (currentInterface === 'fa0/1') {
+                        state.portSecurity.enabled = false;
+                        if (!isSimulated) syncUI();
+                    }
+                    return;
+                }
+                if (cmd === 'switchport port-security mac-address sticky') {
+                    // Implicitly supported in state
+                    return;
+                }
+            }
+
+            // If not matched but valid syntax format, ignore or error
+            if (cmd.length > 0 && !cmd.startsWith('ip dhcp') && !cmd.startsWith('switchport')) {
+                printLog('% Invalid input detected at \'^\' marker.', 'error');
+            }
+        }
+
+        cliInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') {
+                const val = this.value;
+                this.value = '';
+                processCommand(val);
+            }
+        });
+
+        /** ==========================================
+         * UI SYNC (Buttons to State)
+         * ========================================== */
+        function updateToggleUI(btn, knob, isActive) {
+            if (isActive) {
+                btn.classList.remove('bg-gray-300');
+                btn.classList.add('bg-green-500');
+                knob.classList.add('translate-x-6');
+            } else {
+                btn.classList.add('bg-gray-300');
+                btn.classList.remove('bg-green-500');
+                knob.classList.remove('translate-x-6');
+            }
+        }
+
+        function syncUI() {
+            updateToggleUI(btnToggleSnooping, knobSnooping, state.dhcpSnooping.enabled);
+            updateToggleUI(btnToggleDAI, knobDAI, state.dai.enabled);
+            updateToggleUI(btnTogglePortSec, knobPortSec, state.portSecurity.enabled);
+        }
+
+        // Toggle Event Listeners (Triggers CLI Scripts)
+        btnToggleSnooping.addEventListener('click', () => {
+            const willEnable = !state.dhcpSnooping.enabled;
+            if (willEnable) {
+                runCommandScript([
+                    "enable",
+                    "configure terminal",
+                    "ip dhcp snooping",
+                    "ip dhcp snooping vlan 1",
+                    "interface fa0/3",
+                    "ip dhcp snooping trust",
+                    "exit", "exit"
+                ]);
+            } else {
+                runCommandScript([
+                    "enable",
+                    "configure terminal",
+                    "no ip dhcp snooping",
+                    "exit"
+                ]);
+                // If Snooping off, DAI must be off
+                if (state.dai.enabled) {
+                    state.dai.enabled = false;
+                    syncUI();
+                    printLog('% Cảnh báo: Tắt DHCP Snooping sẽ làm mất tác dụng của DAI.', 'syslog');
+                }
+            }
+            state.dhcpSnooping.enabled = willEnable;
+            if(willEnable) {
+                if (!state.dhcpSnooping.trustedPorts.includes('fa0/3')) state.dhcpSnooping.trustedPorts.push('fa0/3');
+            }
+            syncUI();
+        });
+
+        btnToggleDAI.addEventListener('click', () => {
+            const willEnable = !state.dai.enabled;
+            if (willEnable && !state.dhcpSnooping.enabled) {
+                alert("Bạn phải bật DHCP Snooping trước khi bật DAI để có cơ sở dữ liệu Binding Table!");
+                return;
+            }
+            if (willEnable) {
+                runCommandScript([
+                    "enable",
+                    "configure terminal",
+                    "ip arp inspection vlan 1",
+                    "interface fa0/3",
+                    "ip arp inspection trust",
+                    "exit", "exit"
+                ]);
+            } else {
+                runCommandScript(["enable", "configure terminal", "no ip arp inspection vlan 1", "exit"]);
+            }
+            state.dai.enabled = willEnable;
+            syncUI();
+        });
+
+        btnTogglePortSec.addEventListener('click', () => {
+            const willEnable = !state.portSecurity.enabled;
+            if (willEnable) {
+                runCommandScript([
+                    "enable",
+                    "configure terminal",
+                    "interface fa0/1",
+                    "switchport mode access",
+                    "switchport port-security",
+                    "switchport port-security mac-address sticky",
+                    "switchport port-security violation shutdown",
+                    "exit", "exit"
+                ]);
+            } else {
+                runCommandScript(["enable", "configure terminal", "interface fa0/1", "no switchport port-security", "exit"]);
+            }
+            state.portSecurity.enabled = willEnable;
+            syncUI();
+        });
+
+
+        /** ==========================================
+         * ANIMATION ENGINE
+         * ========================================== */
+        // Calculate center of an element relative to canvas
+        function getCenterPoint(el) {
+            // Note: inline styles/tailwind classes are used, bounding box relative to parent is safer
+            return {
+                x: el.offsetLeft + (el.offsetWidth / 2),
+                y: el.offsetTop + (el.offsetHeight / 2)
+            };
+        }
+
+        function createPacket(startNode, typeClass, label) {
+            const packet = document.createElement('div');
+            packet.className = `packet ${typeClass}`;
+            packet.innerText = label;
+            
+            const startPt = getCenterPoint(startNode);
+            packet.style.left = `${startPt.x - 12}px`;
+            packet.style.top = `${startPt.y - 8}px`;
+            
+            canvas.appendChild(packet);
+            // Trigger reflow
+            void packet.offsetWidth;
+            return packet;
+        }
+
+        async function animatePacket(startNode, endNode, typeClass, label, actionAtEnd = null, delay = 1000) {
+            return new Promise((resolve) => {
+                const packet = createPacket(startNode, typeClass, label);
+                const endPt = getCenterPoint(endNode);
+                
+                packet.style.left = `${endPt.x - 12}px`;
+                packet.style.top = `${endPt.y - 8}px`;
+                
+                setTimeout(() => {
+                    if (actionAtEnd === 'block') {
+                        packet.innerHTML = '<i class="fa-solid fa-xmark text-lg"></i>';
+                        packet.style.transform = 'scale(1.5)';
+                        packet.style.backgroundColor = '#ef4444'; // Red
+                        setTimeout(() => packet.remove(), 800);
+                    } else {
+                        packet.style.opacity = '0';
+                        setTimeout(() => packet.remove(), 300);
+                    }
+                    resolve();
+                }, 1500); // matches CSS transition time
+            });
+        }
+
+        function showSyslog(msg) {
+            const time = new Date().toLocaleTimeString('vi-VN', {hour12: false}) + '.' + Math.floor(Math.random()*900+100);
+            printLog(`*Mar 1 ${time}: %${msg}`, 'syslog');
+        }
+
+
+        /** ==========================================
+         * ATTACK & SIMULATION SCENARIOS
+         * ========================================== */
+        const nodeSwitch = document.getElementById('node-switch');
+        const nodeServer = document.getElementById('node-server');
+        const nodePc = document.getElementById('node-pc');
+        const nodeAttacker = document.getElementById('node-attacker');
+
+        // Check Port Security state before any PC action
+        function checkPortSecurity() {
+            if (state.portSecurity.portState === 'down') {
+                printLog('Cổng Fa0/1 đang bị TẮT (err-disable). Gói tin không thể gửi.', 'error');
+                return false;
+            }
+            
+            if (state.portSecurity.enabled) {
+                if (state.pc.mac !== state.portSecurity.mac) {
+                    // VIOLATION!
+                    state.portSecurity.portState = 'down';
+                    
+                    // UI Updates
+                    portFa01Led.classList.remove('bg-green-500');
+                    portFa01Led.classList.add('bg-red-500');
+                    linkFa01.classList.remove('bg-gray-400');
+                    linkFa01.classList.add('port-err-disable');
+                    iconPc.classList.replace('text-gray-700', 'text-red-500');
+                    
+                    showSyslog(`PM-4-ERR_DISABLE: psecure-violation error detected on Fa0/1, putting Fa0/1 in err-disable state`);
+                    showSyslog(`PORT_SECURITY-2-PSECURE_VIOLATION: Security violation occurred, caused by MAC address ${state.pc.mac} on port FastEthernet0/1.`);
+                    showSyslog(`LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/1, changed state to down`);
+                    
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        // Scenario 1: Attacker sends Rogue DHCP Offer
+        btnAttackDHCP.addEventListener('click', async () => {
+            printLog('--- Attacker gửi gói tin DHCP DHCPOFFER giả mạo ---', 'cmd');
+            
+            // Animation: Attacker -> Switch
+            await animatePacket(nodeAttacker, nodeSwitch, 'packet-dhcp-rogue', 'OFFER', 
+                state.dhcpSnooping.enabled ? 'block' : null
+            );
+
+            if (state.dhcpSnooping.enabled) {
+                // Switch checks trust state of Fa0/2. It's untrusted. BLOCKS.
+                showSyslog(`DHCP_SNOOPING-5-DHCP_SNOOPING_UNTRUSTED_PORT: DHCP_SNOOPING drop message on untrusted port, message type: DHCPOFFER, MAC sa: BB:BB`);
+                printLog('Hậu quả bị chặn: DHCP Snooping đã thả gói tin vì cổng Fa0/2 không được cấu hình Trust.', 'normal');
+            } else {
+                // Reaches PC
+                await animatePacket(nodeSwitch, nodePc, 'packet-dhcp-rogue', 'OFFER');
+                printLog('Hậu quả (Thành công): Kẻ tấn công đã cấp IP giả cho PC vì Switch không kiểm tra gói tin DHCP!', 'error');
+                
+                // Poison PC IP
+                state.pc.ip = '10.0.0.1 (Giả)';
+                lblPcIp.innerText = 'IP: 10.0.0.1 (Faked)';
+                lblPcIp.classList.remove('hidden', 'bg-blue-100', 'text-blue-800');
+                lblPcIp.classList.add('bg-red-100', 'text-red-800');
+            }
+        });
+
+        // Scenario 2: PC Requests legitimate IP
+        btnPCRequestDHCP.addEventListener('click', async () => {
+            if (!checkPortSecurity()) return;
+
+            printLog('--- PC gửi DHCP DISCOVER xin cấp IP ---', 'cmd');
+            await animatePacket(nodePc, nodeSwitch, 'packet-dhcp', 'REQ');
+            
+            // Switch broadcasts, Server replies
+            await animatePacket(nodeSwitch, nodeServer, 'packet-dhcp', 'REQ');
+            await animatePacket(nodeServer, nodeSwitch, 'packet-dhcp', 'OFFER');
+
+            if (state.dhcpSnooping.enabled) {
+                // Server port Fa0/3 is trusted? (Implicitly yes via our toggle logic)
+                printLog('Switch kiểm tra Fa0/3 là cổng Trust -> Cho phép gói tin DHCP qua.', 'normal');
+                
+                // Add to binding table
+                const legitIp = '192.168.1.50';
+                state.bindingTable = [{mac: state.pc.mac, ip: legitIp, port: 'Fa0/1'}];
+                
+                await animatePacket(nodeSwitch, nodePc, 'packet-dhcp', 'ACK');
+                
+                state.pc.ip = legitIp;
+                lblPcIp.innerText = `IP: ${legitIp}`;
+                lblPcIp.classList.remove('hidden', 'bg-red-100', 'text-red-800');
+                lblPcIp.classList.add('bg-blue-100', 'text-blue-800');
+                
+                printLog(`Hệ thống: Switch đã ghi nhận Binding Table: MAC=${state.pc.mac}, IP=${legitIp}, Port=Fa0/1`);
+            } else {
+                // Passes normally but no binding table
+                await animatePacket(nodeSwitch, nodePc, 'packet-dhcp', 'ACK');
+                const legitIp = '192.168.1.50';
+                state.pc.ip = legitIp;
+                lblPcIp.innerText = `IP: ${legitIp}`;
+                lblPcIp.classList.remove('hidden', 'bg-red-100', 'text-red-800');
+                lblPcIp.classList.add('bg-blue-100', 'text-blue-800');
+            }
+        });
+
+        // Scenario 3: Attacker sends Spoofed ARP
+        btnAttackARP.addEventListener('click', async () => {
+            printLog('--- Attacker gửi gói tin ARP giả mạo (ARP Spoofing) ---', 'cmd');
+            
+            // Animation Attacker -> Switch
+            await animatePacket(nodeAttacker, nodeSwitch, 'packet-arp', 'ARP', 
+                state.dai.enabled ? 'block' : null
+            );
+
+            if (state.dai.enabled) {
+                // DAI checks Binding Table. Attacker MAC (BB:BB) trying to claim Gateway IP.
+                showSyslog(`SW_DAI-4-DHCP_SNOOPING_DENY: 1 Invalid ARPs (Req) on Fa0/2, vlan 1.([BB:BB]/192.168.1.1/0000.0000.0000/0.0.0.0)`);
+                printLog('Hậu quả bị chặn: DAI kiểm tra bảng DHCP Binding. Vì Attacker không có trong bảng (hoặc IP/MAC không khớp), Switch đã hủy gói ARP giả mạo!', 'normal');
+            } else {
+                // Broadcasts to PC
+                await animatePacket(nodeSwitch, nodePc, 'packet-arp', 'ARP');
+                printLog('Hậu quả (Thành công): Kẻ tấn công đã đầu độc ARP Cache của PC. PC sẽ gửi mọi dữ liệu qua kẻ tấn công (Man-in-the-Middle)!', 'error');
+            }
+        });
+
+        // Scenario 4: PC changes MAC (Simulating someone unplugging PC and plugging a rogue device)
+        btnChangeMAC.addEventListener('click', async () => {
+            if (state.pc.mac === 'AA:AA') {
+                state.pc.mac = 'CC:CC'; // New MAC
+                lblPcMac.innerText = 'MAC: CC:CC';
+                lblPcMac.classList.replace('bg-gray-200', 'bg-red-200');
+                printLog('--- Ai đó đã rút cáp PC và cắm Laptop lạ (MAC: CC:CC) vào Fa0/1 ---', 'cmd');
+            } else {
+                state.pc.mac = 'AA:AA'; // Revert
+                lblPcMac.innerText = 'MAC: AA:AA';
+                lblPcMac.classList.replace('bg-red-200', 'bg-gray-200');
+                printLog('--- Cắm lại PC ban đầu (MAC: AA:AA) vào Fa0/1 ---', 'cmd');
+            }
+            
+            // If Port Security is down, to recover normally needs "shut/no shut". For simplicity, if they revert MAC we don't auto-recover unless they reset.
+            if (state.portSecurity.portState === 'down') {
+                printLog('Lưu ý: Cổng Fa0/1 đang ở trạng thái err-disable (Tắt). Dù đổi lại MAC đúng cũng phải reset cổng (shutdown -> no shutdown) trong thực tế. Nhấn nút Reset Mô Phỏng để làm lại.', 'error');
+                return;
+            }
+
+            // Attempt to send a packet to trigger check
+            printLog('Laptop lạ thử gửi dữ liệu ping...', 'normal');
+            const allowed = checkPortSecurity();
+            if (allowed) {
+                await animatePacket(nodePc, nodeSwitch, 'packet-data', 'PING');
+                printLog('Dữ liệu đi qua bình thường (Vì Port Security đang TẮT).', 'normal');
+            } else {
+                // Animation of block
+                await animatePacket(nodePc, nodeSwitch, 'packet-data', 'PING', 'block');
+            }
+        });
+
+        // Reset All
+        btnReset.addEventListener('click', () => {
+            // Reset State
+            state.dhcpSnooping.enabled = false;
+            state.dhcpSnooping.trustedPorts = [];
+            state.dai.enabled = false;
+            state.portSecurity.enabled = false;
+            state.portSecurity.portState = 'up';
+            state.pc.mac = 'AA:AA';
+            state.pc.ip = null;
+            state.bindingTable = [];
+
+            // Reset UI
+            syncUI();
+            
+            lblPcMac.innerText = 'MAC: AA:AA';
+            lblPcMac.classList.replace('bg-red-200', 'bg-gray-200');
+            lblPcIp.classList.add('hidden');
+            
+            portFa01Led.classList.remove('bg-red-500');
+            portFa01Led.classList.add('bg-green-500');
+            linkFa01.classList.remove('port-err-disable');
+            linkFa01.classList.add('bg-gray-400');
+            iconPc.classList.replace('text-red-500', 'text-gray-700');
+
+            cliMode = 'user';
+            currentInterface = null;
+            updatePrompt();
+            
+            cliOutput.innerHTML = `<div class="text-gray-400 mb-2">
+                --- Hệ thống đã được Reset ---<br>
+                Cisco IOS Software, C2960 Software (C2960-LANBASEK9-M)<br>
+                Nhập lệnh hoặc dùng Nút bấm bên trái để tự động cấu hình.
+            </div>`;
+        });
+
+        // Init
+        updatePrompt();
+        cliInput.focus();
+
+    </script>
+</body>
+</html>

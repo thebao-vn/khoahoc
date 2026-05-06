@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>THE BÁO: [Phần 5.4] Cấu hình và xác minh ACLs</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- FontAwesome for Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <style>
+        /* Custom scrollbar cho terminal và topology */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb { background: #888; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #555; }
+        .terminal-scroll::-webkit-scrollbar-track { background: #1a202c; }
+        .terminal-scroll::-webkit-scrollbar-thumb { background: #4a5568; }
+
+        /* Animation class */
+        .packet {
+            position: absolute;
+            width: 24px;
+            height: 24px;
+            color: #3b82f6;
+            font-size: 24px;
+            z-index: 20;
+            transition: all 1s linear;
+            pointer-events: none;
+            opacity: 0;
+        }
+
+        .deny-effect {
+            position: absolute;
+            color: #ef4444;
+            font-size: 30px;
+            z-index: 25;
+            animation: popExplode 0.5s ease-out forwards;
+            pointer-events: none;
+        }
+
+        @keyframes popExplode {
+            0% { transform: scale(0.5); opacity: 1; }
+            50% { transform: scale(1.5); opacity: 1; }
+            100% { transform: scale(1); opacity: 0; }
+        }
+
+        .typing-cursor::after {
+            content: '_';
+            animation: blink 1s step-start infinite;
+        }
+        @keyframes blink { 50% { opacity: 0; } }
+    </style>
+</head>
+<body class="bg-slate-100 text-slate-800 font-sans min-h-screen flex flex-col">
+
+    <!-- Sticky Header -->
+    <header class="sticky top-0 bg-blue-900 text-white shadow-lg z-50">
+        <div class="container mx-auto px-4 py-3 flex justify-between items-center">
+            <h1 class="text-xl md:text-2xl font-bold">
+                <i class="fa-solid fa-shield-halved mr-2"></i> THE BÁO: [Phần 5.4] Cấu hình và xác minh ACLs
+            </h1>
+            <span class="hidden md:inline text-sm bg-blue-800 px-3 py-1 rounded-full border border-blue-700">Security Fundamentals</span>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="flex-grow container mx-auto px-4 py-6 flex flex-col gap-6">
+        
+        <!-- Hướng dẫn ngắn -->
+        <div class="bg-white p-4 rounded-lg shadow border border-slate-200 text-sm md:text-base">
+            <p><strong>Nhiệm vụ:</strong> Cấu hình Router (R1) sử dụng Standard ACL để <strong>chặn PC2 (192.168.1.10)</strong> truy cập Web Server, nhưng vẫn <strong>cho phép PC1 (192.168.1.5)</strong> truy cập bình thường. Chú ý thứ tự Rule và luật "Implicit Deny" ở cuối mỗi ACL!</p>
+        </div>
+
+        <!-- Topology Container -->
+        <section class="bg-white rounded-lg shadow-md border border-slate-300 w-full h-[50vh] md:h-auto overflow-auto relative" id="topology-wrapper">
+            <div class="min-w-[800px] h-[400px] relative mx-auto bg-slate-50" id="topology">
+                <!-- SVG Lines -->
+                <svg class="absolute inset-0 w-full h-full pointer-events-none" z-index="0">
+                    <line x1="150" y1="120" x2="400" y2="200" stroke="#cbd5e1" stroke-width="4" />
+                    <line x1="150" y1="280" x2="400" y2="200" stroke="#cbd5e1" stroke-width="4" />
+                    <line x1="400" y1="200" x2="650" y2="200" stroke="#cbd5e1" stroke-width="4" />
+                </svg>
+
+                <!-- PC1 -->
+                <div class="absolute left-[100px] top-[80px] flex flex-col items-center w-[100px]" id="node-pc1">
+                    <div class="w-16 h-16 bg-white border-4 border-blue-500 rounded-lg flex items-center justify-center text-blue-600 shadow-md">
+                        <i class="fa-solid fa-laptop text-3xl"></i>
+                    </div>
+                    <span class="font-bold mt-2">PC1 (Admin)</span>
+                    <span class="text-xs text-slate-500">192.168.1.5</span>
+                </div>
+
+                <!-- PC2 -->
+                <div class="absolute left-[100px] top-[240px] flex flex-col items-center w-[100px]" id="node-pc2">
+                    <div class="w-16 h-16 bg-white border-4 border-red-500 rounded-lg flex items-center justify-center text-red-600 shadow-md">
+                        <i class="fa-solid fa-desktop text-3xl"></i>
+                    </div>
+                    <span class="font-bold mt-2">PC2 (Guest)</span>
+                    <span class="text-xs text-slate-500">192.168.1.10</span>
+                </div>
+
+                <!-- Router R1 -->
+                <div class="absolute left-[350px] top-[150px] flex flex-col items-center w-[100px]" id="node-r1">
+                    <div class="w-20 h-20 bg-white border-4 border-slate-700 rounded-full flex items-center justify-center text-slate-800 shadow-lg relative">
+                        <i class="fa-solid fa-network-wired text-3xl"></i>
+                        <span class="absolute -left-6 top-6 text-[10px] font-mono bg-slate-200 px-1 rounded">g0/0</span>
+                        <span class="absolute -right-6 top-6 text-[10px] font-mono bg-slate-200 px-1 rounded">g0/1</span>
+                        <i id="acl-shield" class="fa-solid fa-shield text-green-500 absolute -top-2 -right-2 text-xl hidden transition-all"></i>
+                    </div>
+                    <span class="font-bold mt-2 text-lg">R1</span>
+                    <span class="text-xs text-slate-500 bg-yellow-100 px-1 rounded mt-1 border border-yellow-300 hidden" id="acl-status-label">ACL 10: IN</span>
+                </div>
+
+                <!-- Server -->
+                <div class="absolute left-[600px] top-[150px] flex flex-col items-center w-[100px]" id="node-server">
+                    <div class="w-16 h-20 bg-white border-4 border-purple-500 rounded flex flex-col items-center justify-center text-purple-600 shadow-md">
+                        <i class="fa-solid fa-server text-3xl"></i>
+                    </div>
+                    <span class="font-bold mt-2">Web Server</span>
+                    <span class="text-xs text-slate-500">10.0.0.5</span>
+                </div>
+
+            </div>
+        </section>
+
+        <!-- Controls and CLI -->
+        <section class="grid lg:grid-cols-2 gap-6 items-start">
+            
+            <!-- Control Panel -->
+            <div class="bg-white rounded-lg shadow-md border border-slate-300 p-4 flex flex-col gap-4">
+                <h2 class="text-lg font-bold border-b pb-2"><i class="fa-solid fa-gamepad mr-2"></i>Bảng Điều Khiển Tự Động</h2>
+                
+                <div class="flex flex-col gap-3">
+                    <p class="text-sm text-slate-600 mb-1">Dùng nút bấm để hệ thống tự gõ lệnh, hoặc tự gõ vào Terminal bên cạnh.</p>
+                    
+                    <button onclick="autoTypeCommands(['enable', 'configure terminal', 'access-list 10 deny host 192.168.1.10'])" class="bg-slate-700 hover:bg-slate-800 text-white py-2 px-4 rounded text-left flex justify-between items-center transition">
+                        <span>1. Tạo ACL chặn PC2 (Deny)</span>
+                        <i class="fa-solid fa-hand-pointer text-slate-300"></i>
+                    </button>
+                    
+                    <button onclick="autoTypeCommands(['enable', 'configure terminal', 'access-list 10 permit any'])" class="bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded text-left flex justify-between items-center transition">
+                        <span>2. Thêm rule cho phép các IP khác (Permit any)</span>
+                        <i class="fa-solid fa-hand-pointer text-blue-200"></i>
+                    </button>
+
+                    <button onclick="autoTypeCommands(['enable', 'configure terminal', 'interface g0/0', 'ip access-group 10 in', 'end'])" class="bg-emerald-600 hover:bg-emerald-700 text-white py-2 px-4 rounded text-left flex justify-between items-center transition">
+                        <span>3. Áp dụng ACL vào cổng G0/0 (hướng IN)</span>
+                        <i class="fa-solid fa-hand-pointer text-emerald-200"></i>
+                    </button>
+
+                    <hr class="my-2">
+
+                    <h3 class="text-sm font-bold text-slate-700">Kiểm tra kết nối (Ping tới Server):</h3>
+                    <div class="grid grid-cols-2 gap-2">
+                        <button onclick="sendTraffic('PC1')" class="bg-blue-100 hover:bg-blue-200 text-blue-800 font-semibold py-2 px-4 rounded border border-blue-300 transition shadow-sm">
+                            <i class="fa-regular fa-paper-plane mr-1"></i> Gửi từ PC1
+                        </button>
+                        <button onclick="sendTraffic('PC2')" class="bg-red-100 hover:bg-red-200 text-red-800 font-semibold py-2 px-4 rounded border border-red-300 transition shadow-sm">
+                            <i class="fa-regular fa-paper-plane mr-1"></i> Gửi từ PC2
+                        </button>
+                    </div>
+
+                    <button onclick="resetLab()" class="mt-4 bg-orange-500 hover:bg-orange-600 text-white py-2 px-4 rounded font-bold transition flex items-center justify-center">
+                        <i class="fa-solid fa-rotate-right mr-2"></i> Khôi phục mặc định (Reset)
+                    </button>
+                </div>
+            </div>
+
+            <!-- CLI Console -->
+            <div class="bg-black rounded-lg shadow-md border border-slate-700 p-2 flex flex-col h-[400px]">
+                <div class="bg-slate-800 text-slate-300 text-xs px-2 py-1 rounded flex justify-between mb-2">
+                    <span>Terminal - R1 Console</span>
+                    <span>IOS Software (C1900-UNIVERSALK9-M)</span>
+                </div>
+                <div id="cli-output" class="flex-grow overflow-y-auto text-green-400 font-mono text-sm terminal-scroll whitespace-pre-wrap px-2"></div>
+                <div class="flex mt-2 px-2 items-center">
+                    <span id="cli-prompt" class="text-green-400 font-mono text-sm mr-2">R1></span>
+                    <input type="text" id="cli-input" class="flex-grow bg-transparent text-green-400 font-mono text-sm outline-none" autocomplete="off" spellcheck="false" autofocus>
+                </div>
+            </div>
+
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="bg-black text-white text-center py-4 mt-auto">
+        <p class="text-sm opacity-80">Thiết kế bởi <strong>THE BÁO</strong></p>
+    </footer>
+
+    <!-- JavaScript Logic -->
+    <script>
+        // Cấu trúc dữ liệu trạng thái chuẩn
+        let state = {
+            mode: 'user', // user, priv, config, config-if
+            prompt: 'R1>',
+            acl: [], 
+            interfaceAcl: { g0_0_in: false } 
+        };
+
+        let isTyping = false;
+        let isTrafficRunning = false;
+
+        const cliOutput = document.getElementById('cli-output');
+        const cliInput = document.getElementById('cli-input');
+        const cliPrompt = document.getElementById('cli-prompt');
+        const aclShield = document.getElementById('acl-shield');
+        const aclStatusLabel = document.getElementById('acl-status-label');
+        const topology = document.getElementById('topology');
+
+        function initTerminal() {
+            cliOutput.innerHTML = "System Bootstrap, Version 15.1(4)M4, RELEASE SOFTWARE (fc1)\nCopyright (c) 1986-2023 by THE BÁO Cisco\n\nPress RETURN to get started.\n";
+            updatePrompt();
+        }
+
+        function updatePrompt() {
+            switch(state.mode) {
+                case 'user': state.prompt = 'R1>'; break;
+                case 'priv': state.prompt = 'R1#'; break;
+                case 'config': state.prompt = 'R1(config)#'; break;
+                case 'config-if': state.prompt = 'R1(config-if)#'; break;
+            }
+            cliPrompt.textContent = state.prompt;
+        }
+
+        function printLog(text, isInput = false) {
+            const div = document.createElement('div');
+            if (isInput) {
+                div.textContent = state.prompt + " " + text;
+                div.className = "text-white";
+            } else {
+                div.innerHTML = text; 
+            }
+            cliOutput.appendChild(div);
+            cliOutput.scrollTop = cliOutput.scrollHeight;
+        }
+
+        cliInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                const cmd = this.value.trim();
+                this.value = '';
+                if(cmd === '') { printLog('', true); return; }
+                printLog(cmd, true);
+                processCommand(cmd.toLowerCase());
+            }
+        });
+
+        // Parser CLI nâng cấp: Chống chịu lỗi cú pháp, khoảng trắng
+        function processCommand(cmd) {
+            const args = cmd.split(' ').filter(Boolean);
+            if (args.length === 0) return;
+
+            const baseCmd = args[0];
+
+            // 1. Chuyển chế độ cơ bản
+            if (baseCmd === 'end' || (baseCmd === 'exit' && state.mode === 'priv')) {
+                if (state.mode !== 'user') state.mode = 'priv';
+                updatePrompt(); return;
+            }
+            if (baseCmd === 'exit') {
+                if (state.mode === 'config-if') state.mode = 'config';
+                else if (state.mode === 'config') state.mode = 'priv';
+                else if (state.mode === 'priv') state.mode = 'user';
+                updatePrompt(); return;
+            }
+            if (baseCmd === 'enable' || baseCmd === 'en') {
+                state.mode = 'priv';
+                updatePrompt(); return;
+            }
+            if (baseCmd === 'disable') {
+                state.mode = 'user';
+                updatePrompt(); return;
+            }
+            if ((baseCmd === 'configure' && args[1] === 'terminal') || (baseCmd === 'conf' && args[1] === 't')) {
+                if (state.mode !== 'user') {
+                    state.mode = 'config';
+                    updatePrompt(); return;
+                }
+            }
+
+            // 2. Tạo Rule ACL (Chỉ chạy ở chế độ config)
+            if (state.mode === 'config' && (baseCmd === 'access-list' || baseCmd === 'acc')) {
+                const listNum = args[1];
+                const action = args[2]; 
+                if (listNum === '10' && (action === 'permit' || action === 'deny')) {
+                    let target = '';
+                    if (args[3] === 'host') target = args[4];
+                    else if (args[3] === 'any') target = 'any';
+                    else target = args[3];
+
+                    if (target) {
+                        // Tránh thêm trùng rule y hệt
+                        const exists = state.acl.find(r => r.action === action && r.ip === target);
+                        if (!exists) state.acl.push({ list: listNum, action: action, ip: target });
+                        return;
+                    }
+                }
+            }
+
+            // 3. Vào Interface
+            if (state.mode === 'config' && (baseCmd === 'interface' || baseCmd === 'int')) {
+                if (args[1] === 'g0/0' || args[1] === 'gigabitethernet0/0') {
+                    state.mode = 'config-if';
+                    updatePrompt(); return;
+                }
+            }
+
+            // 4. Áp dụng ACL vào cổng (Chỉ chạy ở config-if)
+            if (state.mode === 'config-if' && baseCmd === 'ip' && args[1] === 'access-group') {
+                if (args[2] === '10' && args[3] === 'in') {
+                    state.interfaceAcl.g0_0_in = true;
+                    updateVisuals(); return;
+                }
+            }
+            if (state.mode === 'config-if' && baseCmd === 'no' && args[1] === 'ip' && args[2] === 'access-group' && args[3] === '10') {
+                state.interfaceAcl.g0_0_in = false;
+                updateVisuals(); return;
+            }
+
+            // Xóa ACL
+            if (state.mode === 'config' && baseCmd === 'no' && args[1] === 'access-list' && args[2] === '10') {
+                state.acl = [];
+                return;
+            }
+
+            // 5. Các lệnh Show
+            if (baseCmd === 'show' || baseCmd === 'sh' || (baseCmd === 'do' && (args[1] === 'show' || args[1] === 'sh'))) {
+                const isDo = baseCmd === 'do';
+                const targetCmd = isDo ? args[2] : args[1];
+                const targetArg = isDo ? args[3] : args[2];
+
+                if (targetCmd === 'access-lists' || (targetCmd === 'ip' && targetArg === 'access-lists')) {
+                    if (state.acl.length === 0) {
+                        printLog('No access lists configured.');
+                    } else {
+                        printLog('Standard IP access list 10');
+                        state.acl.forEach((rule, index) => {
+                            let targetStr = rule.ip === 'any' ? 'any' : `host ${rule.ip}`;
+                            printLog(`    ${(index+1)*10} ${rule.action} ${targetStr}`);
+                        });
+                    }
+                    return;
+                }
+                if (targetCmd === 'run' || targetCmd === 'running-config') {
+                    printLog('Building configuration...');
+                    printLog('!');
+                    if (state.interfaceAcl.g0_0_in) {
+                        printLog('interface GigabitEthernet0/0');
+                        printLog(' ip access-group 10 in');
+                        printLog('!');
+                    }
+                    state.acl.forEach((rule) => {
+                        let targetStr = rule.ip === 'any' ? 'any' : `host ${rule.ip}`;
+                        printLog(`access-list 10 ${rule.action} ${targetStr}`);
+                    });
+                    printLog('end');
+                    return;
+                }
+            }
+
+            printLog(`<span class="text-red-400">% Invalid input detected at marker.</span>`);
+        }
+
+        // Chạy lệnh tự động an toàn (không bị đụng độ)
+        async function autoTypeCommands(cmds) {
+            if (isTyping) return;
+            isTyping = true;
+            cliInput.disabled = true;
+            for (let cmd of cmds) {
+                let currentText = '';
+                for (let i = 0; i < cmd.length; i++) {
+                    currentText += cmd[i];
+                    cliInput.value = currentText;
+                    await new Promise(r => setTimeout(r, 20));
+                }
+                printLog(cmd, true);
+                processCommand(cmd.toLowerCase());
+                cliInput.value = '';
+                await new Promise(r => setTimeout(r, 200));
+            }
+            cliInput.disabled = false;
+            cliInput.focus();
+            isTyping = false;
+        }
+
+        function updateVisuals() {
+            if (state.interfaceAcl.g0_0_in) {
+                aclShield.classList.remove('hidden');
+                aclStatusLabel.classList.remove('hidden');
+            } else {
+                aclShield.classList.add('hidden');
+                aclStatusLabel.classList.add('hidden');
+            }
+        }
+
+        // Logic đánh giá gói tin kèm lý do chi tiết
+        function evaluateTraffic(sourceIp) {
+            if (!state.interfaceAcl.g0_0_in) {
+                return { permitted: true, reason: 'ACL CHƯA được áp dụng vào cổng g0/0 (Thiếu lệnh: ip access-group 10 in)' };
+            }
+
+            const appliedRules = state.acl.filter(r => r.list === '10');
+            if (appliedRules.length === 0) {
+                return { permitted: true, reason: 'ACL 10 trống, mặc định cho phép tất cả' };
+            }
+
+            // Xét từ trên xuống (Top-down)
+            for (let rule of appliedRules) {
+                if (rule.ip === sourceIp || rule.ip === 'any') {
+                    let ipStr = rule.ip === 'any' ? 'any' : `host ${rule.ip}`;
+                    return { 
+                        permitted: rule.action === 'permit', 
+                        reason: `Khớp với Rule: [${rule.action} ${ipStr}] nằm ở trên cùng`
+                    };
+                }
+            }
+
+            return { permitted: false, reason: 'Bị chặn bởi Implicit Deny (Từ chối ngầm định ở cuối mọi ACL)' };
+        }
+
+        // Xử lý gửi gói tin (Khóa chống spam)
+        async function sendTraffic(sourceNode) {
+            if (isTrafficRunning) return;
+            isTrafficRunning = true;
+
+            const sourceIp = sourceNode === 'PC1' ? '192.168.1.5' : '192.168.1.10';
+            const srcEl = document.getElementById(`node-${sourceNode.toLowerCase()}`);
+            const r1El = document.getElementById('node-r1');
+            const destEl = document.getElementById('node-server');
+
+            const packet = document.createElement('i');
+            packet.className = 'fa-solid fa-envelope packet';
+            topology.appendChild(packet);
+
+            const getPos = (el) => ({ x: el.offsetLeft + 40, y: el.offsetTop + 30 });
+            const startPos = getPos(srcEl);
+            const midPos = getPos(r1El);
+            const endPos = getPos(destEl);
+
+            packet.style.left = startPos.x + 'px';
+            packet.style.top = startPos.y + 'px';
+            packet.style.opacity = '1';
+
+            printLog(`<br><span class="text-blue-300">Sending Ping from ${sourceNode} (${sourceIp}) to Server (10.0.0.5)...</span>`);
+            
+            await new Promise(r => setTimeout(r, 50)); 
+            packet.style.left = midPos.x + 'px';
+            packet.style.top = midPos.y + 'px';
+
+            await new Promise(r => setTimeout(r, 1000)); 
+
+            const evaluation = evaluateTraffic(sourceIp);
+
+            if (evaluation.permitted) {
+                packet.style.color = '#10b981'; 
+                packet.style.left = endPos.x + 'px';
+                packet.style.top = endPos.y + 'px';
+                await new Promise(r => setTimeout(r, 1000));
+                
+                packet.style.left = startPos.x + 'px';
+                packet.style.top = startPos.y + 'px';
+                await new Promise(r => setTimeout(r, 1000));
+                
+                packet.remove();
+                printLog(`<span class="text-green-400">Reply from 10.0.0.5: bytes=32 time&lt;1ms TTL=128 (Success)</span>`);
+                printLog(`<span class="text-yellow-400 text-xs">// Giải thích: ${evaluation.reason}</span>`);
+            } else {
+                packet.remove();
+                const explosion = document.createElement('i');
+                explosion.className = 'fa-solid fa-circle-xmark deny-effect';
+                explosion.style.left = (midPos.x - 5) + 'px';
+                explosion.style.top = (midPos.y - 5) + 'px';
+                topology.appendChild(explosion);
+                setTimeout(() => explosion.remove(), 500);
+
+                printLog(`<span class="text-red-400">Request timed out. (Bị rớt gói tin)</span>`);
+                if(state.interfaceAcl.g0_0_in) {
+                     printLog(`<span class="text-red-400">%SEC-6-IPACCESSLOGP: list 10 denied icmp ${sourceIp} -> 10.0.0.5</span>`);
+                }
+                printLog(`<span class="text-yellow-400 text-xs">// Giải thích: ${evaluation.reason}</span>`);
+            }
+
+            isTrafficRunning = false;
+        }
+
+        function resetLab() {
+            state = { mode: 'user', prompt: 'R1>', acl: [], interfaceAcl: { g0_0_in: false } };
+            updateVisuals();
+            initTerminal();
+            document.querySelectorAll('.packet, .deny-effect').forEach(e => e.remove());
+        }
+
+        initTerminal();
+    </script>
+</body>
+</html>

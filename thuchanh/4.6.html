@@ -1,0 +1,664 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>THE BÁO: Phần 4: Các dịch vụ IP / 4.6 Nguyên lý QoS</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        /* Tùy chỉnh thanh cuộn cho Console và Canvas Container */
+        .custom-scrollbar::-webkit-scrollbar {
+            height: 8px;
+            width: 8px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #888;
+            border-radius: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: #555;
+        }
+        .console-scrollbar::-webkit-scrollbar-track { background: #1a1a1a; }
+        .console-scrollbar::-webkit-scrollbar-thumb { background: #4a4a4a; }
+        
+        /* Hiệu ứng nhấp nháy cho con trỏ CLI */
+        .cursor-blink { animation: blink 1s step-end infinite; }
+        @keyframes blink { 50% { opacity: 0; } }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen flex flex-col font-sans text-gray-800">
+
+    <!-- HEADER (Sticky) -->
+    <header class="sticky top-0 z-50 bg-blue-900 text-white shadow-lg">
+        <div class="container mx-auto px-4 py-3 flex items-center justify-between">
+            <h1 class="text-lg md:text-xl font-bold truncate">
+                <i class="fa-solid fa-network-wired mr-2"></i> 
+                THE BÁO: Các dịch vụ IP / 4.6 Nguyên lý cơ bản QoS (Phân loại, đánh dấu, hàng đợi)
+            </h1>
+            <button onclick="resetSimulation()" class="bg-red-600 hover:bg-red-500 text-white px-4 py-2 rounded text-sm font-semibold transition shadow">
+                <i class="fa-solid fa-rotate-right mr-1"></i> Reset
+            </button>
+        </div>
+    </header>
+
+    <!-- MAIN CONTENT -->
+    <main class="flex-grow container mx-auto px-4 py-6 flex flex-col gap-6">
+        
+        <!-- TOPOLOGY / DIAGRAM AREA -->
+        <div class="bg-white rounded-xl shadow-md border border-gray-300 flex flex-col overflow-hidden">
+            <div class="bg-gray-200 px-4 py-2 border-b border-gray-300 font-semibold text-gray-700 flex justify-between items-center">
+                <span><i class="fa-solid fa-display mr-2"></i> Sơ đồ mạng & Mô phỏng luồng dữ liệu</span>
+                <span class="text-xs font-normal bg-blue-100 text-blue-800 px-2 py-1 rounded">Cuộn để xem toàn bộ sơ đồ</span>
+            </div>
+            
+            <!-- Canvas Container: Cố định chiều cao trên mobile (50vh), cuộn ngang/dọc -->
+            <div class="w-full h-[50vh] md:h-[450px] overflow-auto custom-scrollbar relative bg-slate-50 cursor-move" id="canvas-container">
+                <!-- Canvas kích thước cố định để không móp méo -->
+                <canvas id="topoCanvas" width="1000" height="450" class="block"></canvas>
+                
+                <!-- Chú giải nổi trên Canvas -->
+                <div class="absolute top-4 left-4 bg-white/90 p-2 rounded shadow border border-gray-200 text-xs">
+                    <p class="font-bold mb-1">Chú giải Gói tin (Packets):</p>
+                    <p><span class="inline-block w-3 h-3 rounded-full bg-red-500 mr-1"></span> Voice (VoIP) - Ưu tiên cao nhất (EF)</p>
+                    <p><span class="inline-block w-3 h-3 rounded bg-blue-500 mr-1"></span> Video - Ưu tiên trung bình (AF)</p>
+                    <p><span class="inline-block w-3 h-3 bg-gray-400 mr-1" style="border-radius: 2px;"></span> Data (Web/FTP) - Best Effort</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- CONTROL PANEL & CONSOLE -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            
+            <!-- Bảng điều khiển Nút bấm -->
+            <div class="bg-white rounded-xl shadow-md border border-gray-300 p-4 flex flex-col">
+                <h2 class="font-bold text-lg mb-4 text-blue-900 border-b pb-2"><i class="fa-solid fa-toggle-on mr-2"></i> Bảng điều khiển (Control Panel)</h2>
+                
+                <div class="space-y-4 flex-grow">
+                    <!-- Nhóm 1: Gửi Traffic -->
+                    <div class="bg-blue-50 p-3 rounded-lg border border-blue-100">
+                        <h3 class="font-semibold text-blue-800 mb-2">1. Trình tạo Lưu lượng (Traffic Generator)</h3>
+                        <p class="text-sm text-gray-600 mb-3">Tạo ra các gói tin chạy qua Router. "Tắc nghẽn" sẽ tạo lượng lớn Data lấn át Voice.</p>
+                        <div class="flex flex-wrap gap-2">
+                            <button onclick="generateTraffic('normal')" class="bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded text-sm transition">
+                                <i class="fa-solid fa-play mr-1"></i> Gửi Traffic Bình thường
+                            </button>
+                            <button onclick="generateTraffic('congestion')" class="bg-orange-500 hover:bg-orange-600 text-white px-3 py-1.5 rounded text-sm transition">
+                                <i class="fa-solid fa-burst mr-1"></i> Gây Tắc nghẽn (Congestion)
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Nhóm 2: Cấu hình QoS -->
+                    <div class="bg-indigo-50 p-3 rounded-lg border border-indigo-100">
+                        <h3 class="font-semibold text-indigo-800 mb-2">2. Cấu hình QoS (Classification, Marking, Queuing)</h3>
+                        <p class="text-sm text-gray-600 mb-3">Sử dụng nút bấm để tự động gõ lệnh cấu hình QoS cho Router.</p>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            <button id="btn-class" onclick="triggerCommandList(['conf t', 'class-map match-any VOICE', 'match protocol rtp', 'exit', 'class-map match-any VIDEO', 'match protocol udp', 'exit'])" class="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-2 rounded text-sm transition text-left">
+                                <i class="fa-solid fa-filter mr-1"></i> 1. Phân loại (Class-Map)
+                            </button>
+                            <button id="btn-policy" onclick="triggerCommandList(['policy-map QOS-POLICY', 'class VOICE', 'set dscp ef', 'priority percent 30', 'exit', 'class VIDEO', 'set dscp af41', 'bandwidth percent 40', 'exit', 'class class-default', 'fair-queue', 'exit', 'exit'])" class="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-2 rounded text-sm transition text-left disabled:opacity-50 disabled:cursor-not-allowed">
+                                <i class="fa-solid fa-tag mr-1"></i> 2. Đánh dấu & Hàng đợi (Policy)
+                            </button>
+                            <button id="btn-apply" onclick="triggerCommandList(['interface Serial0/0/0', 'service-policy output QOS-POLICY', 'end'])" class="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-2 rounded text-sm transition text-left col-span-1 sm:col-span-2 disabled:opacity-50 disabled:cursor-not-allowed">
+                                <i class="fa-solid fa-plug-circle-check mr-1"></i> 3. Áp dụng cổng (Service-Policy)
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Console CLI -->
+            <div class="bg-black rounded-xl shadow-md border border-gray-800 flex flex-col overflow-hidden h-[400px]">
+                <div class="bg-gray-800 px-4 py-2 border-b border-gray-900 font-mono text-sm text-gray-300 flex justify-between items-center">
+                    <span>Router1 Console</span>
+                    <i class="fa-solid fa-terminal"></i>
+                </div>
+                <!-- Vùng hiển thị Output -->
+                <div id="console-output" class="flex-grow p-4 overflow-y-auto custom-scrollbar console-scrollbar font-mono text-sm text-green-400 whitespace-pre-wrap">
+<!-- Nội dung console sẽ render ở đây -->
+<span class="text-gray-400">Cisco IOS Software, C2900 Software (C2900-UNIVERSALK9-M), Version 15.1(4)M4
+Copyright (c) 1986-2011 by Cisco Systems, Inc.</span>
+<br><br>Router> </div>
+                
+                <!-- Vùng nhập lệnh -->
+                <div class="bg-gray-900 px-4 py-2 font-mono text-sm flex items-center border-t border-gray-700 text-white">
+                    <span id="cli-prompt" class="mr-2 text-green-400">Router&gt;</span>
+                    <input type="text" id="cli-input" class="bg-transparent border-none outline-none flex-grow text-white placeholder-gray-600" placeholder="Gõ lệnh tại đây (VD: enable)..." autocomplete="off">
+                </div>
+            </div>
+            
+        </div>
+    </main>
+
+    <!-- FOOTER -->
+    <footer class="bg-black text-gray-400 py-6 mt-auto">
+        <div class="container mx-auto px-4 text-center">
+            <p class="font-bold text-white mb-2"><i class="fa-solid fa-shield-halved text-blue-500 mr-2"></i>Hệ thống Mô phỏng Mạng Tương tác</p>
+            <p class="text-sm">End.</p>
+            <p class="text-sm mt-4">Thiết kế bởi <span class="text-blue-400 font-semibold">THE BÁO</span> &copy; 2026</p>
+        </div>
+    </footer>
+
+    <!-- JAVASCRIPT: Logic Mô phỏng & Canvas & CLI -->
+    <script>
+        // --- TRẠNG THÁI HỆ THỐNG (STATE) ---
+        const state = {
+            cliMode: 'user', // user (>), priv (#), conf (config#), conf-cmap, conf-pmap, conf-if
+            cliPrompt: 'Router>',
+            config: {
+                classMaps: {},
+                policyMaps: {},
+                interfaceS0: { servicePolicyOut: null }
+            },
+            qosActive: false, // Bật khi apply service-policy
+            packets: [],
+            routerQueues: {
+                priority: [], // LLQ cho Voice
+                class1: [],   // CBWFQ cho Video
+                default: []   // Thay thế cho Data
+            },
+            fifoQueue: [],    // Dùng khi không có QoS
+            queueCapacity: 15, // Sức chứa hàng đợi xuất của Router (Bottleneck)
+            bandwidthRate: 1.5, // Số gói tin xử lý mỗi frame ở cổng ra
+            droppedCount: { voice: 0, video: 0, data: 0 }
+        };
+
+        // --- CÁC HẰNG SỐ MÔ PHỎNG MẠNG ---
+        const NODE = {
+            PC_VOICE: { x: 100, y: 100 },
+            PC_VIDEO: { x: 100, y: 225 },
+            PC_DATA:  { x: 100, y: 350 },
+            ROUTER1:  { x: 450, y: 225 }, // Điểm nghẽn
+            ROUTER2:  { x: 800, y: 225 },
+            DEST:     { x: 900, y: 225 }
+        };
+
+        // --- CANVAS SETUP ---
+        const canvas = document.getElementById('topoCanvas');
+        const ctx = canvas.getContext('2d');
+        let animationId;
+
+        // Xử lý kéo thả canvas để cuộn trên desktop (giả lập touch)
+        let isDragging = false;
+        let startX, startY, scrollLeft, scrollTop;
+        const container = document.getElementById('canvas-container');
+
+        container.addEventListener('mousedown', (e) => {
+            isDragging = true;
+            startX = e.pageX - container.offsetLeft;
+            startY = e.pageY - container.offsetTop;
+            scrollLeft = container.scrollLeft;
+            scrollTop = container.scrollTop;
+            container.style.cursor = 'grabbing';
+        });
+        container.addEventListener('mouseleave', () => { isDragging = false; container.style.cursor = 'move'; });
+        container.addEventListener('mouseup', () => { isDragging = false; container.style.cursor = 'move'; });
+        container.addEventListener('mousemove', (e) => {
+            if (!isDragging) return;
+            e.preventDefault();
+            const x = e.pageX - container.offsetLeft;
+            const y = e.pageY - container.offsetTop;
+            container.scrollLeft = scrollLeft - (x - startX);
+            container.scrollTop = scrollTop - (y - startY);
+        });
+
+        // --- LỚP ĐỐI TƯỢNG GÓI TIN (PACKET) ---
+        class Packet {
+            constructor(type, startNode) {
+                this.type = type; // 'voice', 'video', 'data'
+                this.x = startNode.x;
+                this.y = startNode.y;
+                this.target = NODE.ROUTER1;
+                this.speed = 3;
+                this.phase = 'inbound'; // inbound, queued, outbound, dropped, finished
+                this.id = Math.random().toString(36).substr(2, 5);
+                this.marked = false;
+                
+                if(type === 'voice') { this.color = '#ef4444'; this.size = 6; } // Đỏ, tròn
+                else if(type === 'video') { this.color = '#3b82f6'; this.size = 6; } // Xanh, vuông
+                else { this.color = '#9ca3af'; this.size = 5; } // Xám, vuông nhỏ
+            }
+
+            draw() {
+                if(this.phase === 'dropped') {
+                    // Vẽ dấu X đỏ báo rớt gói
+                    ctx.beginPath();
+                    ctx.strokeStyle = 'red';
+                    ctx.lineWidth = 2;
+                    ctx.moveTo(this.x - 4, this.y - 4); ctx.lineTo(this.x + 4, this.y + 4);
+                    ctx.moveTo(this.x + 4, this.y - 4); ctx.lineTo(this.x - 4, this.y + 4);
+                    ctx.stroke();
+                    return;
+                }
+
+                ctx.fillStyle = this.color;
+                if (this.type === 'voice') {
+                    ctx.beginPath();
+                    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                    ctx.fill();
+                } else {
+                    ctx.fillRect(this.x - this.size, this.y - this.size, this.size*2, this.size*2);
+                }
+
+                // Vẽ viền nếu được Marking (Đánh dấu bởi QoS)
+                if (this.marked && state.qosActive) {
+                    ctx.strokeStyle = '#fbbf24'; // Vàng
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    if(this.type === 'voice') ctx.arc(this.x, this.y, this.size+2, 0, Math.PI * 2);
+                    else ctx.strokeRect(this.x - this.size-2, this.y - this.size-2, this.size*2+4, this.size*2+4);
+                    ctx.stroke();
+                }
+            }
+
+            move() {
+                if (this.phase === 'inbound') {
+                    // Di chuyển tới Router 1
+                    const dx = this.target.x - this.x;
+                    const dy = this.target.y - this.y;
+                    const dist = Math.sqrt(dx*dx + dy*dy);
+                    if (dist < 5) {
+                        this.x = this.target.x;
+                        this.y = this.target.y;
+                        this.enterRouter();
+                    } else {
+                        this.x += (dx/dist) * this.speed;
+                        this.y += (dy/dist) * this.speed;
+                    }
+                } else if (this.phase === 'outbound') {
+                    // Di chuyển từ Router 1 sang Dest
+                    this.target = NODE.DEST;
+                    const dx = this.target.x - this.x;
+                    const dy = this.target.y - this.y;
+                    const dist = Math.sqrt(dx*dx + dy*dy);
+                    if (dist < 5) {
+                        this.phase = 'finished';
+                    } else {
+                        this.x += (dx/dist) * (this.speed * 1.5); // Nhanh hơn khi đã ra ngoài
+                        this.y += (dy/dist) * (this.speed * 1.5);
+                    }
+                }
+            }
+
+            enterRouter() {
+                this.phase = 'queued';
+                this.x = NODE.ROUTER1.x; // Vị trí giả lập trong Router
+                
+                // --- CORE LOGIC MÔ PHỎNG QoS ---
+                if (!state.qosActive) {
+                    // Không có QoS -> FIFO (First In First Out) Tail Drop
+                    if (state.fifoQueue.length >= state.queueCapacity) {
+                        this.drop();
+                    } else {
+                        state.fifoQueue.push(this);
+                    }
+                } else {
+                    // CÓ QoS -> Phân loại, Đánh dấu và Đưa vào hàng đợi tương ứng
+                    this.marked = true; 
+                    if (this.type === 'voice') {
+                        if (state.routerQueues.priority.length >= state.queueCapacity) this.drop();
+                        else state.routerQueues.priority.push(this);
+                    } 
+                    else if (this.type === 'video') {
+                        if (state.routerQueues.class1.length >= state.queueCapacity) this.drop();
+                        else state.routerQueues.class1.push(this);
+                    } 
+                    else {
+                        // Data - Dễ bị drop nhất nếu đầy
+                        if (state.routerQueues.default.length >= state.queueCapacity * 0.5) this.drop();
+                        else state.routerQueues.default.push(this);
+                    }
+                }
+            }
+
+            drop() {
+                this.phase = 'dropped';
+                this.y += (Math.random() * 40 - 20); // Văng ra một chút
+                state.droppedCount[this.type]++;
+                // Sau 1s biến mất
+                setTimeout(() => { this.phase = 'finished'; }, 1000);
+            }
+        }
+
+        // --- DRAW TOPOLOGY ---
+        function drawNetwork() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Vẽ dây mạng
+            ctx.strokeStyle = '#cbd5e1'; ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.moveTo(NODE.PC_VOICE.x, NODE.PC_VOICE.y); ctx.lineTo(NODE.ROUTER1.x, NODE.ROUTER1.y);
+            ctx.moveTo(NODE.PC_VIDEO.x, NODE.PC_VIDEO.y); ctx.lineTo(NODE.ROUTER1.x, NODE.ROUTER1.y);
+            ctx.moveTo(NODE.PC_DATA.x, NODE.PC_DATA.y); ctx.lineTo(NODE.ROUTER1.x, NODE.ROUTER1.y);
+            ctx.stroke();
+
+            // Link WAN (Chỗ thắt cổ chai)
+            ctx.strokeStyle = '#f87171'; ctx.lineWidth = 2; // Đỏ báo hiệu link WAN hẹp
+            ctx.setLineDash([5, 5]);
+            ctx.beginPath();
+            ctx.moveTo(NODE.ROUTER1.x, NODE.ROUTER1.y); ctx.lineTo(NODE.ROUTER2.x, NODE.ROUTER2.y);
+            ctx.stroke();
+            ctx.setLineDash([]);
+            
+            // Link LAN đích
+            ctx.strokeStyle = '#cbd5e1'; ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.moveTo(NODE.ROUTER2.x, NODE.ROUTER2.y); ctx.lineTo(NODE.DEST.x, NODE.DEST.y);
+            ctx.stroke();
+
+            // Vẽ Nodes (Máy tính, Router)
+            drawIcon(NODE.PC_VOICE, '\uf095', 'IP Phone (Voice)', '#ef4444');
+            drawIcon(NODE.PC_VIDEO, '\uf03d', 'PC (Video)', '#3b82f6');
+            drawIcon(NODE.PC_DATA, '\uf108', 'PC (Data)', '#6b7280');
+            
+            drawRouter(NODE.ROUTER1, 'Router 1 (HQ)', true);
+            drawRouter(NODE.ROUTER2, 'Router 2 (Branch)');
+            
+            drawIcon(NODE.DEST, '\uf233', 'Server Đích', '#10b981');
+
+            // Vẽ bảng thống kê Drop
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+            ctx.fillRect(400, 20, 200, 80);
+            ctx.strokeStyle = '#ccc'; ctx.strokeRect(400, 20, 200, 80);
+            ctx.fillStyle = '#000'; ctx.font = '12px Arial';
+            ctx.fillText("Thống kê Gói tin Bị Rớt (Dropped):", 410, 35);
+            ctx.fillStyle = '#ef4444'; ctx.fillText(`Voice Drop: ${state.droppedCount.voice}`, 410, 55);
+            ctx.fillStyle = '#3b82f6'; ctx.fillText(`Video Drop: ${state.droppedCount.video}`, 410, 70);
+            ctx.fillStyle = '#6b7280'; ctx.fillText(`Data Drop:  ${state.droppedCount.data}`, 410, 85);
+
+            // Xử lý Hàng đợi bên trong Router 1 (Bottleneck xuất ra)
+            processRouterQueues();
+
+            // Cập nhật và vẽ gói tin
+            for (let i = state.packets.length - 1; i >= 0; i--) {
+                const p = state.packets[i];
+                p.move();
+                p.draw();
+                if (p.phase === 'finished') {
+                    state.packets.splice(i, 1);
+                }
+            }
+            
+            animationId = requestAnimationFrame(drawNetwork);
+        }
+
+        function drawIcon(node, unicode, label, color) {
+            ctx.fillStyle = '#ffffff';
+            ctx.beginPath();
+            ctx.arc(node.x, node.y, 20, 0, Math.PI*2);
+            ctx.fill();
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 2;
+            ctx.stroke();
+
+            ctx.font = '900 20px "Font Awesome 6 Free"';
+            ctx.fillStyle = color;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(unicode, node.x, node.y);
+
+            ctx.font = '12px Arial';
+            ctx.fillStyle = '#333';
+            ctx.fillText(label, node.x, node.y + 35);
+        }
+
+        function drawRouter(node, label, showQueues = false) {
+            ctx.fillStyle = '#1e293b'; // Trụ xanh đen
+            ctx.beginPath();
+            ctx.arc(node.x, node.y, 25, 0, Math.PI*2);
+            ctx.fill();
+            
+            // Vẽ mũi tên cross của router
+            ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(node.x-15, node.y); ctx.lineTo(node.x+15, node.y);
+            ctx.moveTo(node.x, node.y-15); ctx.lineTo(node.x, node.y+15);
+            ctx.stroke();
+
+            ctx.font = 'bold 12px Arial';
+            ctx.fillStyle = '#1e293b';
+            ctx.fillText(label, node.x, node.y + 40);
+
+            // Vẽ minh họa Queue nếu là Router 1
+            if (showQueues) {
+                ctx.fillStyle = '#000'; ctx.fillText('WAN Link (1.5Mbps)', node.x + 80, node.y - 10);
+                
+                ctx.font = '10px Arial';
+                if (!state.qosActive) {
+                    ctx.fillStyle = '#eab308'; ctx.fillText('FIFO Queue (QoS OFF)', node.x, node.y - 35);
+                } else {
+                    ctx.fillStyle = '#10b981'; ctx.fillText('CBWFQ/LLQ (QoS ON)', node.x, node.y - 35);
+                }
+            }
+        }
+
+        // Logic xuất gói tin khỏi hàng đợi (Mô phỏng thắt cổ chai)
+        let queueTimer = 0;
+        function processRouterQueues() {
+            queueTimer++;
+            if (queueTimer > 10) { // Mỗi ~160ms nhả 1 lượng gói tin
+                queueTimer = 0;
+                let packetsToSend = state.bandwidthRate; // 1.5
+                let sent = 0;
+
+                if (!state.qosActive) {
+                    // FIFO
+                    while (sent < packetsToSend && state.fifoQueue.length > 0) {
+                        const p = state.fifoQueue.shift();
+                        p.phase = 'outbound';
+                        sent++;
+                    }
+                } else {
+                    // QoS ON: Strict Priority cho Voice (LLQ)
+                    while (sent < packetsToSend && state.routerQueues.priority.length > 0) {
+                        const p = state.routerQueues.priority.shift();
+                        p.phase = 'outbound';
+                        sent++;
+                    }
+                    // Nếu còn băng thông, cho Video (CBWFQ)
+                    while (sent < packetsToSend && state.routerQueues.class1.length > 0) {
+                        const p = state.routerQueues.class1.shift();
+                        p.phase = 'outbound';
+                        sent += 0.5; // Giả sử video tốn ít bw hơn voice xíu trong mô phỏng
+                    }
+                    // Cuối cùng mới tới Data (Best Effort)
+                    while (sent < packetsToSend && state.routerQueues.default.length > 0) {
+                        const p = state.routerQueues.default.shift();
+                        p.phase = 'outbound';
+                        sent += 0.5;
+                    }
+                }
+            }
+        }
+
+        // --- HÀNH ĐỘNG GIAO DIỆN ---
+        let trafficInterval = null;
+        function generateTraffic(type) {
+            let count = 0;
+            const maxCount = type === 'normal' ? 10 : 40;
+            
+            printToConsole(`*HỆ THỐNG: Bắt đầu tạo luồng dữ liệu (${type})*`, 'sys');
+
+            if(trafficInterval) clearInterval(trafficInterval);
+            
+            trafficInterval = setInterval(() => {
+                // Tỉ lệ sinh gói: Voice 1, Video 1, Data 1 (nếu normal)
+                // Nếu Congestion: Voice 1, Video 2, Data 8 (Mô phỏng Download nặng)
+                
+                state.packets.push(new Packet('voice', NODE.PC_VOICE));
+                
+                if (type === 'normal' || count % 2 === 0) {
+                    state.packets.push(new Packet('video', NODE.PC_VIDEO));
+                }
+                
+                let dataCount = type === 'congestion' ? 4 : 1;
+                for(let i=0; i<dataCount; i++){
+                    // Thêm slight delay to position to avoid overlapping perfectly
+                    setTimeout(() => {
+                        state.packets.push(new Packet('data', NODE.PC_DATA));
+                    }, i * 50);
+                }
+
+                count++;
+                if (count >= maxCount) clearInterval(trafficInterval);
+            }, 200); // Mỗi 200ms
+        }
+
+        function resetSimulation() {
+            // Reset logic
+            state.cliMode = 'user'; updatePrompt('Router>');
+            state.qosActive = false;
+            state.config = { classMaps: {}, policyMaps: {}, interfaceS0: { servicePolicyOut: null } };
+            state.packets = [];
+            state.fifoQueue = [];
+            state.routerQueues = { priority: [], class1: [], default: [] };
+            state.droppedCount = { voice: 0, video: 0, data: 0 };
+            
+            // Reset UI
+            document.getElementById('console-output').innerHTML = '<span class="text-gray-400">Cisco IOS Software, C2900 Software...</span><br><br>';
+            document.getElementById('btn-policy').disabled = true;
+            document.getElementById('btn-apply').disabled = true;
+            
+            printToConsole("*HỆ THỐNG: Đã xóa toàn bộ cấu hình và khôi phục trạng thái ban đầu.*", 'sys');
+        }
+
+        // --- CONSOLE & CLI LOGIC ---
+        const cliInput = document.getElementById('cli-input');
+        const consoleOutput = document.getElementById('console-output');
+        const cliPromptEl = document.getElementById('cli-prompt');
+
+        function updatePrompt(newPrompt) {
+            state.cliPrompt = newPrompt;
+            cliPromptEl.innerText = newPrompt;
+        }
+
+        function printToConsole(text, type = 'normal') {
+            const span = document.createElement('span');
+            if (type === 'sys') span.className = 'text-yellow-400 block mt-2 mb-2 italic';
+            else if (type === 'error') span.className = 'text-red-500 block';
+            else if (type === 'cmd') span.className = 'text-white font-bold block';
+            else span.className = 'text-green-400 block';
+            
+            span.innerText = text;
+            consoleOutput.appendChild(span);
+            consoleOutput.scrollTop = consoleOutput.scrollHeight;
+        }
+
+        cliInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') {
+                const cmd = this.value.trim();
+                if (cmd) {
+                    printToConsole(`${state.cliPrompt} ${cmd}`, 'cmd');
+                    processCommand(cmd);
+                } else {
+                    printToConsole(`${state.cliPrompt}`, 'cmd');
+                }
+                this.value = '';
+            }
+        });
+
+        // Hàm giả lập bộ phân tích lệnh IOS
+        function processCommand(cmdRaw) {
+            const cmd = cmdRaw.toLowerCase().replace(/\s+/g, ' ');
+            const args = cmd.split(' ');
+
+            // Lệnh chung
+            if (cmd === 'exit' || cmd === 'end') {
+                if (state.cliMode === 'priv') { state.cliMode = 'user'; updatePrompt('Router>'); }
+                else if (state.cliMode === 'conf') { state.cliMode = 'priv'; updatePrompt('Router#'); printToConsole('%SYS-5-CONFIG_I: Configured from console by console');}
+                else if (state.cliMode.startsWith('conf-')) { state.cliMode = 'conf'; updatePrompt('Router(config)#'); }
+                if(cmd === 'end') { state.cliMode = 'priv'; updatePrompt('Router#'); }
+                return;
+            }
+
+            if (state.cliMode === 'user') {
+                if (cmd === 'enable' || cmd === 'en') { state.cliMode = 'priv'; updatePrompt('Router#'); }
+                else printToConsole('% Unknown command or computer name', 'error');
+            } 
+            else if (state.cliMode === 'priv') {
+                if (cmd === 'configure terminal' || cmd === 'conf t') { state.cliMode = 'conf'; updatePrompt('Router(config)#'); }
+                else if (cmd.startsWith('show')) { printToConsole('Show command simplified for simulation. Look at the topology.', 'sys'); }
+                else printToConsole('% Invalid input detected', 'error');
+            }
+            else if (state.cliMode === 'conf') {
+                if (cmd.startsWith('class-map')) {
+                    const name = args.length > 2 ? args[2].toUpperCase() : 'UNKNOWN';
+                    state.config.classMaps[name] = {};
+                    state.cliMode = 'conf-cmap'; updatePrompt('Router(config-cmap)#');
+                    document.getElementById('btn-policy').disabled = false; // Mở khóa bước 2
+                }
+                else if (cmd.startsWith('policy-map')) {
+                    const name = args.length > 1 ? args[1].toUpperCase() : 'UNKNOWN';
+                    state.config.policyMaps[name] = {};
+                    state.cliMode = 'conf-pmap'; updatePrompt('Router(config-pmap)#');
+                }
+                else if (cmd.startsWith('interface')) {
+                    state.cliMode = 'conf-if'; updatePrompt('Router(config-if)#');
+                }
+                else printToConsole('% Invalid input detected', 'error');
+            }
+            else if (state.cliMode === 'conf-cmap') {
+                if (cmd.startsWith('match')) { /* Giả lập lưu luật match */ }
+                else printToConsole('% Invalid input detected', 'error');
+            }
+            else if (state.cliMode === 'conf-pmap') {
+                if (cmd.startsWith('class')) {
+                    state.cliMode = 'conf-pmap-c'; updatePrompt('Router(config-pmap-c)#');
+                }
+                else printToConsole('% Invalid input detected', 'error');
+            }
+            else if (state.cliMode === 'conf-pmap-c') {
+                if (cmd.startsWith('set dscp') || cmd.startsWith('priority') || cmd.startsWith('bandwidth') || cmd === 'fair-queue') {
+                     document.getElementById('btn-apply').disabled = false; // Mở khóa bước 3
+                }
+                else printToConsole('% Invalid input detected', 'error');
+            }
+            else if (state.cliMode === 'conf-if') {
+                if (cmd.startsWith('service-policy output')) {
+                    const policyName = args[2] ? args[2].toUpperCase() : '';
+                    if (state.config.policyMaps[policyName]) {
+                        state.qosActive = true;
+                        printToConsole(`*HỆ THỐNG: QoS ĐÃ ĐƯỢC BẬT trên cổng ra! Các gói tin giờ đây sẽ được ưu tiên theo chính sách.*`, 'sys');
+                    } else {
+                        printToConsole(`% Policy-map ${policyName} not configured`, 'error');
+                    }
+                }
+                else printToConsole('% Invalid input detected', 'error');
+            }
+        }
+
+        // Hàm chạy danh sách lệnh tự động từ Nút bấm
+        function triggerCommandList(cmdList) {
+            let i = 0;
+            // Focus vào input để trông giống đang gõ
+            cliInput.focus();
+            
+            function runNext() {
+                if (i < cmdList.length) {
+                    const cmd = cmdList[i];
+                    printToConsole(`${state.cliPrompt} ${cmd}`, 'cmd');
+                    processCommand(cmd);
+                    i++;
+                    setTimeout(runNext, 150); // Delay nhỏ tạo cảm giác giống gõ thật
+                }
+            }
+            // Tự động chuyển mode để đảm bảo lệnh chạy đúng (Giả lập user vào conf t nếu đang ở ngoài)
+            if (state.cliMode === 'user') processCommand('enable');
+            if (state.cliMode === 'priv') processCommand('conf t');
+            
+            setTimeout(runNext, 200);
+        }
+
+        // --- KHỞI ĐỘNG ---
+        drawNetwork();
+
+    </script>
+</body>
+</html>

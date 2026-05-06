@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>THE BÁO: [Phần 5.1] Các khái niệm bảo mật cốt lõi</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        /* Tùy chỉnh Scrollbar cho CLI và Topology */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb { background: #888; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #555; }
+        
+        /* Hoạt ảnh cảnh báo */
+        @keyframes pulse-red {
+            0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+            70% { box-shadow: 0 0 0 15px rgba(239, 68, 68, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+        }
+        .vulnerable-alert { animation: pulse-red 2s infinite; }
+
+        /* Hoạt ảnh Gói tin (Packet) */
+        .packet {
+            position: absolute;
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 12px;
+            z-index: 20;
+            transition: all 1.5s linear;
+        }
+
+        /* Hoạt ảnh lá chắn */
+        @keyframes shield-block {
+            0% { transform: scale(0.5); opacity: 0; }
+            50% { transform: scale(1.5); opacity: 1; text-shadow: 0 0 10px #3b82f6; }
+            100% { transform: scale(1); opacity: 0.8; }
+        }
+        .shield-active { animation: shield-block 0.5s ease-out forwards; display: block !important; }
+
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-5px) rotate(-5deg); }
+            50% { transform: translateX(5px) rotate(5deg); }
+            75% { transform: translateX(-5px) rotate(-5deg); }
+        }
+        .shake-animation { animation: shake 0.4s ease-in-out; }
+    </style>
+</head>
+<body class="bg-slate-100 min-h-screen flex flex-col font-sans text-gray-800">
+
+    <!-- Header -->
+    <header class="sticky top-0 bg-slate-900 text-white p-4 z-50 shadow-lg border-b-4 border-blue-500">
+        <div class="container mx-auto flex justify-between items-center">
+            <h1 class="text-xl md:text-2xl font-bold tracking-wide">
+                <i class="fa-solid fa-shield-halved mr-2 text-blue-400"></i> THE BÁO: [PHẦN 5.1] THREATS, VULNERABILITIES & MITIGATIONS
+            </h1>
+            <span class="hidden md:inline-block bg-blue-600 px-3 py-1 rounded text-sm font-semibold">Security Fundamentals</span>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="flex-grow container mx-auto p-4 flex flex-col gap-6 w-full max-w-6xl">
+        
+        <!-- Hướng dẫn ngắn -->
+        <div class="bg-white p-4 rounded-lg shadow border-l-4 border-blue-500">
+            <h2 class="text-lg font-bold mb-2 text-slate-800">Mục tiêu bài học:</h2>
+            <p class="text-sm text-gray-600">
+                1. <b>Threat (Mối đe dọa):</b> Hacker đang cố gắng tấn công vào hệ thống (Ping Flood, Telnet Brute-force).<br>
+                2. <b>Vulnerability (Lỗ hổng):</b> Router chưa được cấu hình tường lửa, mở cổng Telnet (23) không an toàn.<br>
+                3. <b>Mitigation (Giảm thiểu):</b> Cấu hình Access Control List (ACL) để chặn tấn công và đóng cổng dịch vụ không an toàn.
+            </p>
+        </div>
+
+        <!-- Topology / Sơ đồ mô phỏng -->
+        <div class="w-full h-[50vh] md:h-[400px] overflow-auto border border-gray-300 rounded-xl bg-slate-50 shadow-inner relative group touch-pan-x touch-pan-y" id="topology-container">
+            <!-- Cố định kích thước khung sơ đồ bên trong để không bị méo -->
+            <div class="min-w-[800px] h-[380px] relative mx-auto mt-2" id="topology-canvas">
+                
+                <!-- Background Lines -->
+                <div class="absolute top-[50%] left-[10%] w-[80%] border-t-4 border-dashed border-gray-400 -z-10" id="network-line"></div>
+
+                <!-- Hacker Node (Threat) -->
+                <div class="absolute top-[50%] left-[10%] transform -translate-x-1/2 -translate-y-1/2 flex flex-col items-center" id="node-hacker">
+                    <div class="w-20 h-20 bg-red-100 border-4 border-red-500 rounded-full flex justify-center items-center shadow-lg relative">
+                        <i class="fa-solid fa-user-secret text-4xl text-red-600"></i>
+                        <span class="absolute -top-2 -right-2 bg-red-600 text-white text-xs font-bold px-2 py-1 rounded-full">Threat</span>
+                    </div>
+                    <span class="mt-2 font-bold text-red-700">Internet (Hacker)</span>
+                    <span class="text-xs text-gray-500">IP: 203.0.113.5</span>
+                </div>
+
+                <!-- Router Node (Gateway/Mitigation Point) -->
+                <div class="absolute top-[50%] left-[50%] transform -translate-x-1/2 -translate-y-1/2 flex flex-col items-center" id="node-router">
+                    <div class="w-24 h-24 bg-blue-100 border-4 border-blue-500 rounded-full flex justify-center items-center shadow-lg relative z-10">
+                        <i class="fa-solid fa-network-wired text-4xl text-blue-600"></i>
+                        <!-- Icon Shield (Ẩn mặc định) -->
+                        <i class="fa-solid fa-shield text-5xl text-blue-500 absolute hidden opacity-90 transition-all duration-300" id="router-shield"></i>
+                    </div>
+                    <span class="mt-2 font-bold text-blue-800">Edge Router</span>
+                    <div class="flex gap-1 mt-1 text-xs font-mono">
+                        <span id="status-acl" class="bg-gray-200 text-gray-600 px-2 py-1 rounded">ACL: OFF</span>
+                        <span id="status-telnet" class="bg-red-200 text-red-700 px-2 py-1 rounded">Telnet: OPEN</span>
+                    </div>
+                </div>
+
+                <!-- Server Node (Target/Vulnerable) -->
+                <div class="absolute top-[50%] left-[90%] transform -translate-x-1/2 -translate-y-1/2 flex flex-col items-center" id="node-server">
+                    <div class="w-20 h-20 bg-green-100 border-4 border-green-500 rounded-lg flex justify-center items-center shadow-lg transition-colors duration-300 vulnerable-alert" id="server-box">
+                        <i class="fa-solid fa-server text-4xl text-green-700" id="server-icon"></i>
+                    </div>
+                    <span class="mt-2 font-bold text-green-800" id="server-label">Internal Server</span>
+                    <span class="text-xs text-gray-500">IP: 192.168.1.100</span>
+                    
+                    <!-- Thanh máu (HP) Server -->
+                    <div class="w-24 h-3 bg-gray-300 rounded mt-2 overflow-hidden border border-gray-400">
+                        <div id="server-hp" class="h-full bg-green-500 w-full transition-all duration-300"></div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+        <!-- Bảng điều khiển & Console -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 h-auto">
+            
+            <!-- Control Panel -->
+            <div class="bg-white p-4 rounded-xl shadow border border-gray-200 flex flex-col">
+                <h3 class="text-lg font-bold mb-4 text-slate-800 border-b pb-2"><i class="fa-solid fa-gamepad mr-2"></i>Bảng Cấu Hình & Tấn Công Nhanh</h3>
+                
+                <div class="grid grid-cols-2 gap-4 flex-grow">
+                    <!-- Khu vực Threat -->
+                    <div class="bg-red-50 p-3 rounded border border-red-200">
+                        <h4 class="text-sm font-bold text-red-700 mb-2">Đóng vai Hacker (Threat)</h4>
+                        <button onclick="triggerAttack('ping')" class="w-full bg-red-600 hover:bg-red-700 text-white font-semibold py-2 px-2 rounded mb-2 text-sm transition-colors shadow flex items-center justify-center">
+                            <i class="fa-solid fa-bomb mr-2"></i> Gửi ICMP Ping Flood
+                        </button>
+                        <button onclick="triggerAttack('telnet')" class="w-full bg-red-800 hover:bg-red-900 text-white font-semibold py-2 px-2 rounded text-sm transition-colors shadow flex items-center justify-center">
+                            <i class="fa-solid fa-unlock-keyhole mr-2"></i> Telnet Brute-force
+                        </button>
+                    </div>
+
+                    <!-- Khu vực Mitigation -->
+                    <div class="bg-blue-50 p-3 rounded border border-blue-200">
+                        <h4 class="text-sm font-bold text-blue-700 mb-2">Quản trị viên (Mitigation)</h4>
+                        <button onclick="applyMitigation('acl', true)" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-2 rounded mb-2 text-sm transition-colors shadow flex items-center justify-center">
+                            <i class="fa-solid fa-shield-virus mr-2"></i> Bật ACL (Chặn Ping)
+                        </button>
+                        <button onclick="applyMitigation('telnet', true)" class="w-full bg-blue-800 hover:bg-blue-900 text-white font-semibold py-2 px-2 rounded text-sm transition-colors shadow flex items-center justify-center">
+                            <i class="fa-solid fa-lock mr-2"></i> Khóa Telnet (Cổng 23)
+                        </button>
+                    </div>
+                </div>
+
+                <button onclick="resetSimulation()" class="w-full mt-4 bg-gray-700 hover:bg-gray-800 text-white font-bold py-3 px-4 rounded transition-colors shadow flex items-center justify-center">
+                    <i class="fa-solid fa-rotate-right mr-2"></i> Khôi Phục Trạng Thái Ban Đầu (Reset)
+                </button>
+            </div>
+
+            <!-- Console CLI -->
+            <div class="bg-gray-900 rounded-xl shadow flex flex-col border border-gray-700 overflow-hidden">
+                <div class="bg-gray-800 text-gray-300 text-sm py-2 px-4 flex justify-between items-center border-b border-gray-700">
+                    <span><i class="fa-solid fa-terminal mr-2"></i>Router CLI Console</span>
+                    <span class="text-xs text-green-400">● Online</span>
+                </div>
+                
+                <div id="console-output" class="flex-grow p-4 font-mono text-sm h-64 overflow-y-auto" style="color: #0f0; text-shadow: 0 0 2px rgba(0,255,0,0.5);">
+                    <!-- Nội dung console sẽ được inject qua JS -->
+                    <div>System Bootstrap, Version 15.2(4)M1...</div>
+                    <div>Router> enable</div>
+                    <div>Router# conf t</div>
+                    <div>Enter configuration commands, one per line. End with CNTL/Z.</div>
+                    <div>Router(config)# </div>
+                </div>
+
+                <!-- CLI Input -->
+                <div class="bg-black p-2 flex items-center border-t border-gray-700">
+                    <span class="text-green-500 font-mono mr-2">Router(config)#</span>
+                    <input type="text" id="cli-input" class="flex-grow bg-transparent border-none text-green-400 font-mono focus:outline-none" placeholder="Nhập lệnh... (vd: access-list 100 deny icmp any any)" autocomplete="off">
+                    <button onclick="processManualCLI()" class="bg-gray-700 hover:bg-gray-600 text-white px-3 py-1 rounded text-sm ml-2">Enter</button>
+                </div>
+            </div>
+
+        </div>
+    </main>
+
+    <!-- Footer chứng minh cuộn chạm đáy -->
+    <footer class="bg-black text-white text-center p-6 mt-10 border-t-4 border-gray-800">
+        <p class="font-semibold tracking-wider text-gray-400">THIẾT KẾ BỞI <span class="text-white">THE BÁO</span></p>
+        <p class="text-xs text-gray-600 mt-1">Mô phỏng phục vụ mục đích giáo dục mạng máy tính & bảo mật.</p>
+    </footer>
+
+    <!-- JavaScript Logic -->
+    <script>
+        // --- TRẠNG THÁI HỆ THỐNG ---
+        let systemState = {
+            aclEnabled: false,      // Chặn Ping
+            telnetClosed: false,    // Đóng cổng 23
+            serverHp: 100,
+            isAnimating: false
+        };
+
+        // --- CÁC PHẦN TỬ DOM ---
+        const consoleOut = document.getElementById('console-output');
+        const cliInput = document.getElementById('cli-input');
+        const canvas = document.getElementById('topology-canvas');
+        
+        // --- HÀM GHI LOG CONSOLE ---
+        function writeConsole(text, type = 'info') {
+            const line = document.createElement('div');
+            line.style.marginTop = "4px";
+            if (type === 'cmd') {
+                line.innerHTML = `<span class="text-yellow-400">Router(config)# ${text}</span>`;
+            } else if (type === 'error') {
+                line.innerHTML = `<span class="text-red-500">% ${text}</span>`;
+            } else if (type === 'alert') {
+                line.innerHTML = `<span class="text-orange-500 font-bold">[ALERT] ${text}</span>`;
+            } else if (type === 'success') {
+                line.innerHTML = `<span class="text-blue-400">*Syslog: ${text}</span>`;
+            } else {
+                line.textContent = text;
+            }
+            consoleOut.appendChild(line);
+            consoleOut.scrollTop = consoleOut.scrollHeight; // Cuộn xuống dòng mới nhất
+        }
+
+        // --- XỬ LÝ NHẬP LỆNH THỦ CÔNG ---
+        cliInput.addEventListener('keypress', function (e) {
+            if (e.key === 'Enter') processManualCLI();
+        });
+
+        function processManualCLI() {
+            const cmd = cliInput.value.trim().toLowerCase();
+            if (!cmd) return;
+            
+            writeConsole(cmd, 'cmd');
+            cliInput.value = '';
+
+            // Regex để nhận diện lệnh cơ bản
+            if (cmd === 'access-list 100 deny icmp any any' || cmd.includes('deny icmp')) {
+                applyMitigation('acl', false);
+            } 
+            else if (cmd === 'access-list 100 deny tcp any any eq 23' || cmd.includes('deny tcp') || cmd === 'transport input ssh') {
+                applyMitigation('telnet', false);
+            }
+            else if (cmd === 'exit' || cmd === 'end') {
+                writeConsole('Exited configuration mode.');
+            }
+            else if (cmd === 'show access-lists') {
+                writeConsole('Extended IP access list 100');
+                if(systemState.aclEnabled) writeConsole('    10 deny icmp any any (active)');
+                if(systemState.telnetClosed) writeConsole('    20 deny tcp any any eq telnet (active)');
+                if(!systemState.aclEnabled && !systemState.telnetClosed) writeConsole('    (No rules configured)');
+            }
+            else {
+                writeConsole('Invalid input detected at ^ marker.', 'error');
+                writeConsole('Hậu quả: Cấu hình sai, hệ thống vẫn tồn tại lỗ hổng (Vulnerability)!', 'alert');
+                document.getElementById('node-router').classList.add('shake-animation');
+                setTimeout(() => document.getElementById('node-router').classList.remove('shake-animation'), 400);
+            }
+        }
+
+        // --- HÀM ÁP DỤNG BIỆN PHÁP BẢO VỆ (MITIGATION) ---
+        function applyMitigation(type, isFromButton) {
+            if (type === 'acl') {
+                if(systemState.aclEnabled) return;
+                systemState.aclEnabled = true;
+                if(isFromButton) writeConsole('access-list 100 deny icmp any any', 'cmd');
+                
+                document.getElementById('status-acl').textContent = "ACL: ON (Block ICMP)";
+                document.getElementById('status-acl').className = "bg-green-200 text-green-800 px-2 py-1 rounded";
+                writeConsole('Tường lửa đã kích hoạt. Ping bị chặn.', 'success');
+                
+                // Hiển thị khiên
+                const shield = document.getElementById('router-shield');
+                shield.classList.remove('hidden');
+                shield.classList.add('shield-active');
+                
+            } else if (type === 'telnet') {
+                if(systemState.telnetClosed) return;
+                systemState.telnetClosed = true;
+                if(isFromButton) {
+                    writeConsole('access-list 100 deny tcp any any eq 23', 'cmd');
+                    writeConsole('line vty 0 4', 'cmd');
+                    writeConsole('transport input ssh', 'cmd');
+                }
+                
+                document.getElementById('status-telnet').textContent = "Telnet: CLOSED";
+                document.getElementById('status-telnet').className = "bg-green-200 text-green-800 px-2 py-1 rounded";
+                writeConsole('Cổng Telnet 23 đã bị đóng. Đã vô hiệu hóa lỗ hổng truy cập từ xa.', 'success');
+            }
+
+            // Nếu cả 2 đều an toàn, tắt alert ở server
+            if(systemState.aclEnabled && systemState.telnetClosed) {
+                document.getElementById('server-box').classList.remove('vulnerable-alert');
+            }
+        }
+
+        // --- HÀM MÔ PHỎNG TẤN CÔNG (THREAT) ---
+        function triggerAttack(type) {
+            if (systemState.isAnimating) return;
+            systemState.isAnimating = true;
+
+            let isBlocked = false;
+            let packetColor = '';
+            let attackIcon = '';
+            let alertMsg = '';
+
+            if (type === 'ping') {
+                packetColor = 'bg-red-500';
+                attackIcon = '<i class="fa-solid fa-bomb"></i>';
+                isBlocked = systemState.aclEnabled;
+                writeConsole('External Threat: Phát hiện luồng ICMP Ping Flood...', 'alert');
+                alertMsg = 'Hậu quả: Băng thông cạn kiệt, DDoS Server!';
+            } else if (type === 'telnet') {
+                packetColor = 'bg-purple-600';
+                attackIcon = '<i class="fa-solid fa-key"></i>';
+                isBlocked = systemState.telnetClosed;
+                writeConsole('External Threat: Phát hiện dò mật khẩu Telnet (Port 23)...', 'alert');
+                alertMsg = 'Hậu quả: Hacker chiếm quyền điều khiển Server!';
+            }
+
+            // Tạo gói tin (Packet)
+            const packet = document.createElement('div');
+            packet.className = `packet ${packetColor} shadow-lg`;
+            packet.innerHTML = attackIcon;
+            
+            // Vị trí bắt đầu (Hacker)
+            packet.style.left = '10%';
+            packet.style.top = '50%';
+            packet.style.transform = 'translate(-50%, -50%)';
+            canvas.appendChild(packet);
+
+            // Bắt đầu di chuyển
+            setTimeout(() => {
+                // Di chuyển đến Router
+                packet.style.left = '50%';
+                
+                setTimeout(() => {
+                    if (isBlocked) {
+                        // Bị chặn tại Router
+                        packet.innerHTML = '<i class="fa-solid fa-ban"></i>';
+                        packet.classList.add('bg-gray-500');
+                        document.getElementById('router-shield').classList.add('shake-animation');
+                        setTimeout(() => document.getElementById('router-shield').classList.remove('shake-animation'), 400);
+                        
+                        writeConsole(`Mitigation SUCCESS: Gói tin độc hại đã bị Router chặn lại!`, 'success');
+                        
+                        // Hủy packet
+                        setTimeout(() => {
+                            packet.remove();
+                            systemState.isAnimating = false;
+                        }, 500);
+
+                    } else {
+                        // Lọt qua Router -> Đi tới Server
+                        packet.style.left = '90%';
+                        
+                        setTimeout(() => {
+                            // Hit Server
+                            packet.innerHTML = '<i class="fa-solid fa-fire"></i>';
+                            packet.style.transform = 'translate(-50%, -50%) scale(2)';
+                            packet.style.opacity = '0';
+                            
+                            // Trừ HP Server
+                            systemState.serverHp -= 30;
+                            if(systemState.serverHp < 0) systemState.serverHp = 0;
+                            
+                            const hpBar = document.getElementById('server-hp');
+                            hpBar.style.width = systemState.serverHp + '%';
+                            
+                            // Đổi màu HP bar theo mức máu
+                            if(systemState.serverHp <= 40) hpBar.className = "h-full w-full transition-all duration-300 bg-red-600";
+                            else if(systemState.serverHp <= 70) hpBar.className = "h-full w-full transition-all duration-300 bg-yellow-500";
+
+                            const serverBox = document.getElementById('server-box');
+                            serverBox.classList.remove('bg-green-100', 'border-green-500');
+                            serverBox.classList.add('bg-red-200', 'border-red-600', 'shake-animation');
+                            
+                            document.getElementById('server-icon').classList.remove('text-green-700');
+                            document.getElementById('server-icon').classList.add('text-red-700');
+
+                            setTimeout(() => serverBox.classList.remove('shake-animation'), 400);
+
+                            writeConsole(`CRITICAL: Server bị trúng đòn! ${alertMsg}`, 'error');
+
+                            if(systemState.serverHp === 0) {
+                                writeConsole(`SYSTEM DOWN: Server đã sập do không có biện pháp bảo vệ!`, 'error');
+                                document.getElementById('server-label').textContent = "Server OFFLINE";
+                                document.getElementById('server-label').classList.replace('text-green-800', 'text-red-800');
+                            }
+
+                            setTimeout(() => {
+                                packet.remove();
+                                systemState.isAnimating = false;
+                            }, 500);
+
+                        }, 1500); // Thời gian từ Router đến Server
+                    }
+                }, 1500); // Thời gian từ Hacker đến Router
+            }, 100);
+        }
+
+        // --- HÀM RESET ---
+        function resetSimulation() {
+            systemState = {
+                aclEnabled: false,
+                telnetClosed: false,
+                serverHp: 100,
+                isAnimating: false
+            };
+
+            // Reset UI Router
+            document.getElementById('status-acl').textContent = "ACL: OFF";
+            document.getElementById('status-acl').className = "bg-gray-200 text-gray-600 px-2 py-1 rounded";
+            
+            document.getElementById('status-telnet').textContent = "Telnet: OPEN";
+            document.getElementById('status-telnet').className = "bg-red-200 text-red-700 px-2 py-1 rounded";
+
+            const shield = document.getElementById('router-shield');
+            shield.classList.add('hidden');
+            shield.classList.remove('shield-active');
+
+            // Reset UI Server
+            const hpBar = document.getElementById('server-hp');
+            hpBar.style.width = '100%';
+            hpBar.className = "h-full bg-green-500 w-full transition-all duration-300";
+
+            const serverBox = document.getElementById('server-box');
+            serverBox.classList.add('bg-green-100', 'border-green-500', 'vulnerable-alert');
+            serverBox.classList.remove('bg-red-200', 'border-red-600');
+
+            document.getElementById('server-icon').classList.add('text-green-700');
+            document.getElementById('server-icon').classList.remove('text-red-700');
+
+            document.getElementById('server-label').textContent = "Internal Server";
+            document.getElementById('server-label').classList.replace('text-red-800', 'text-green-800');
+
+            // Reset Console
+            consoleOut.innerHTML = '';
+            writeConsole('System Reset Success.');
+            writeConsole('Router> enable');
+            writeConsole('Router# conf t');
+            writeConsole('Enter configuration commands, one per line. End with CNTL/Z.');
+            writeConsole('Hệ thống hiện đang trong trạng thái NGUY HIỂM (Vulnerable).', 'alert');
+        }
+
+    </script>
+</body>
+</html>

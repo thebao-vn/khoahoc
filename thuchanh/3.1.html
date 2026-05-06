@@ -1,0 +1,661 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>THE BÁO: Phần 3.1 Bảng định tuyến (Routing table)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        /* Tùy chỉnh thanh cuộn cho đẹp */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb { background: #94a3b8; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #64748b; }
+
+        /* Khung sơ đồ hiển thị thiết bị */
+        .device-node {
+            position: absolute;
+            transform: translate(-50%, -50%);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s ease;
+            z-index: 10;
+        }
+
+        /* Gói tin mạng bình thường (Đốm sáng xanh) */
+        .packet {
+            position: absolute;
+            width: 16px;
+            height: 16px;
+            background-color: #3b82f6;
+            border-radius: 50%;
+            box-shadow: 0 0 10px #3b82f6;
+            z-index: 20;
+            opacity: 0;
+            transition: top 1s linear, left 1s linear, opacity 0.2s;
+            pointer-events: none;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px; /* Cho icon phong bì nếu có lỗi */
+        }
+
+        /* Hiệu ứng Rớt Phong bì đỏ báo lỗi */
+        @keyframes dropError {
+            0% { transform: translateY(0) scale(1) rotate(0deg); opacity: 1; }
+            50% { transform: translateY(20px) scale(1.2) rotate(15deg); opacity: 1; color: #ef4444; text-shadow: 0 0 15px rgba(239, 68, 68, 0.8); }
+            100% { transform: translateY(50px) scale(1) rotate(-10deg); opacity: 0; }
+        }
+        .error-drop {
+            background-color: transparent !important;
+            box-shadow: none !important;
+            animation: dropError 1.5s forwards ease-in;
+        }
+
+        /* Hiệu ứng chớp cảnh báo ở thiết bị */
+        @keyframes pulse-red {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+            50% { box-shadow: 0 0 0 15px rgba(239, 68, 68, 0.6); }
+        }
+        .node-error { animation: pulse-red 1s 2; border-color: #ef4444 !important; }
+
+        @keyframes pulse-green {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }
+            50% { box-shadow: 0 0 0 15px rgba(34, 197, 94, 0.6); }
+        }
+        .node-success { animation: pulse-green 1s 2; border-color: #22c55e !important; }
+    </style>
+</head>
+<body class="bg-gray-100 font-sans min-h-screen flex flex-col">
+
+    <!-- Header Sticky -->
+    <header class="sticky top-0 z-50 bg-blue-900 text-white shadow-lg">
+        <div class="max-w-7xl mx-auto px-4 py-3 flex justify-between items-center">
+            <div>
+                <h1 class="text-lg md:text-xl font-bold uppercase tracking-wide">
+                    <span class="text-yellow-400">THE BÁO:</span> Phần 3.1 Bảng định tuyến (Routing Table)
+                </h1>
+                <p class="text-xs text-blue-200 mt-1 hidden md:block">Layer 3 Routing & Longest Prefix Match Simulation</p>
+            </div>
+            <button onclick="resetSystem()" class="bg-red-600 hover:bg-red-500 text-white px-4 py-2 rounded font-semibold text-sm transition shadow shadow-red-800">
+                <i class="fas fa-sync-alt mr-1"></i> Reset Cấu Hình
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="flex-grow max-w-7xl mx-auto w-full p-4 flex flex-col gap-6">
+        
+        <!-- Sơ đồ mạng (Vuốt ngang trên Mobile) -->
+        <section class="bg-white rounded-xl shadow border border-gray-300 relative overflow-hidden flex flex-col">
+            <div class="p-3 bg-gray-50 border-b border-gray-200 flex justify-between items-center">
+                <h2 class="font-bold text-gray-800"><i class="fas fa-sitemap mr-2 text-blue-600"></i>Sơ đồ mạng lưới (Topology)</h2>
+                <span class="text-xs text-blue-600 animate-pulse md:hidden font-medium"><i class="fas fa-arrows-alt-h mr-1"></i>Vuốt ngang để xem hết sơ đồ</span>
+            </div>
+            
+            <!-- Container cuộn ngang, cao 50vh trên mobile -->
+            <div class="w-full h-[50vh] md:h-[450px] overflow-x-auto relative" id="topology-container">
+                <!-- Vùng kích thước cố định để không bị móp méo -->
+                <div class="min-w-[800px] w-full h-full relative bg-slate-50" id="drawing-area">
+                    
+                    <!-- Vẽ các đường cáp -->
+                    <svg class="absolute inset-0 w-full h-full pointer-events-none z-0">
+                        <!-- Nối PC1 -> R1 -->
+                        <line x1="20%" y1="50%" x2="50%" y2="50%" stroke="#cbd5e1" stroke-width="4" />
+                        <!-- Nối R1 -> PC2 -->
+                        <line x1="50%" y1="50%" x2="50%" y2="85%" stroke="#cbd5e1" stroke-width="4" />
+                        <!-- Nối R1 -> WAN -->
+                        <line x1="50%" y1="50%" x2="80%" y2="25%" stroke="#cbd5e1" stroke-width="4" />
+                    </svg>
+
+                    <!-- Thiết bị mạng -->
+                    <!-- Router Trung tâm -->
+                    <div id="node-r1" class="device-node" style="top: 50%; left: 50%;">
+                        <div class="w-20 h-20 bg-gray-800 border-4 border-gray-600 rounded-full flex items-center justify-center text-white shadow-lg z-10">
+                            <i class="fas fa-hdd text-3xl"></i>
+                        </div>
+                        <div class="bg-white px-2 py-1 rounded shadow text-xs mt-2 border text-center font-bold">R1 (Router)</div>
+                    </div>
+
+                    <!-- Mạng LAN 1 -->
+                    <div id="node-lan1" class="device-node" style="top: 50%; left: 20%;">
+                        <div class="w-16 h-16 bg-green-100 border-2 border-green-500 rounded-lg flex items-center justify-center text-green-700 shadow z-10">
+                            <i class="fas fa-desktop text-3xl"></i>
+                        </div>
+                        <div class="bg-white px-2 py-1 rounded shadow text-xs mt-2 border text-center">
+                            <div class="font-bold">PC1 (LAN 1)</div>
+                            <div class="text-gray-500 font-mono">192.168.1.10</div>
+                            <div class="text-green-600 text-[10px] mt-1 font-bold">Cổng G0/0</div>
+                        </div>
+                    </div>
+
+                    <!-- Mạng LAN 2 -->
+                    <div id="node-lan2" class="device-node" style="top: 85%; left: 50%;">
+                        <div class="w-16 h-16 bg-purple-100 border-2 border-purple-500 rounded-lg flex items-center justify-center text-purple-700 shadow z-10">
+                            <i class="fas fa-server text-3xl"></i>
+                        </div>
+                        <div class="bg-white px-2 py-1 rounded shadow text-xs mt-2 border text-center">
+                            <div class="font-bold">Server (LAN 2)</div>
+                            <div class="text-gray-500 font-mono">10.0.0.50</div>
+                            <div class="text-purple-600 text-[10px] mt-1 font-bold">Cổng G0/1</div>
+                        </div>
+                    </div>
+
+                    <!-- Internet / WAN -->
+                    <div id="node-wan" class="device-node" style="top: 25%; left: 80%;">
+                        <div class="w-20 h-20 bg-blue-100 border-2 border-blue-500 rounded-full flex items-center justify-center text-blue-700 shadow z-10">
+                            <i class="fas fa-cloud text-4xl"></i>
+                        </div>
+                        <div class="bg-white px-2 py-1 rounded shadow text-xs mt-2 border text-center">
+                            <div class="font-bold">Internet</div>
+                            <div class="text-gray-500 font-mono">8.8.8.8</div>
+                            <div class="text-blue-600 text-[10px] mt-1 font-bold">Cổng S0/0/0</div>
+                        </div>
+                    </div>
+
+                    <!-- Thùng rác (Drop Packet) -->
+                    <div id="node-drop" class="device-node opacity-60" style="top: 85%; left: 80%;">
+                        <div class="w-14 h-14 bg-red-50 border-2 border-red-300 border-dashed rounded flex items-center justify-center text-red-500 z-10">
+                            <i class="fas fa-trash-alt text-2xl"></i>
+                        </div>
+                        <div class="bg-white px-2 py-1 rounded shadow text-[10px] mt-2 border text-center text-red-600 font-bold">
+                            Rớt gói (Drop)
+                        </div>
+                    </div>
+
+                    <!-- Gói tin mô phỏng (Ẩn đi) -->
+                    <div id="packet" class="packet"></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Khung điều khiển & Console -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            
+            <!-- Cột trái: Điều khiển -->
+            <div class="flex flex-col gap-6">
+                <!-- Routing Table UI -->
+                <div class="bg-white rounded-xl shadow border border-gray-300">
+                    <div class="p-3 bg-blue-50 border-b border-blue-200 rounded-t-xl font-bold text-blue-800">
+                        <i class="fas fa-table mr-2"></i>Bảng định tuyến của R1
+                    </div>
+                    <div class="p-4">
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-sm text-left">
+                                <thead class="bg-gray-100 text-gray-600 text-xs uppercase">
+                                    <tr>
+                                        <th class="px-2 py-2">Loại</th>
+                                        <th class="px-2 py-2">Mạng đích (Network)</th>
+                                        <th class="px-2 py-2 text-center">Subnet (/Prefix)</th>
+                                        <th class="px-2 py-2">Cổng ra (Interface)</th>
+                                        <th class="px-2 py-2 text-center">Thao tác</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="table-body">
+                                    <!-- Render bằng JS -->
+                                </tbody>
+                            </table>
+                        </div>
+                        <p class="text-xs text-gray-500 mt-2 italic">* Quy tắc: <strong>Longest Prefix Match</strong> - Định tuyến dựa trên Mask /Prefix dài nhất khớp với IP đích.</p>
+                    </div>
+                </div>
+
+                <!-- Thao tác UI -->
+                <div class="bg-white rounded-xl shadow border border-gray-300 p-4">
+                    <h3 class="font-bold text-gray-800 mb-3"><i class="fas fa-cogs mr-2 text-gray-600"></i>Cấu hình Mạng</h3>
+                    
+                    <!-- Form thêm Route -->
+                    <div class="bg-gray-50 p-3 rounded border border-gray-200 mb-4">
+                        <p class="text-sm font-semibold mb-2">1. Thêm định tuyến tĩnh (Static Route):</p>
+                        <div class="grid grid-cols-12 gap-2 mb-2">
+                            <input type="text" id="route-ip" placeholder="Network IP (VD: 8.8.8.0)" class="col-span-12 sm:col-span-5 px-2 py-1.5 border rounded text-sm focus:ring focus:ring-blue-200 outline-none">
+                            <input type="number" id="route-prefix" placeholder="Prefix (0-32)" min="0" max="32" class="col-span-12 sm:col-span-3 px-2 py-1.5 border rounded text-sm focus:ring focus:ring-blue-200 outline-none">
+                            <select id="route-int" class="col-span-12 sm:col-span-4 px-2 py-1.5 border rounded text-sm focus:ring focus:ring-blue-200 outline-none bg-white">
+                                <option value="G0/0">G0/0 (LAN 1)</option>
+                                <option value="G0/1">G0/1 (LAN 2)</option>
+                                <option value="S0/0/0">S0/0/0 (WAN)</option>
+                            </select>
+                        </div>
+                        <div class="flex gap-2">
+                            <button onclick="uiAddRoute()" class="flex-1 bg-gray-800 hover:bg-gray-900 text-white py-1.5 rounded text-sm font-medium transition shadow-sm">
+                                Thêm Route
+                            </button>
+                            <button onclick="uiAddDefaultRoute()" class="flex-1 bg-yellow-600 hover:bg-yellow-700 text-white py-1.5 rounded text-sm font-medium transition shadow-sm">
+                                Thêm Default Route
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Form Gửi Ping -->
+                    <div class="bg-blue-50 p-3 rounded border border-blue-200">
+                        <p class="text-sm font-semibold text-blue-800 mb-2">2. Kiểm tra kết nối (Gửi Ping từ PC1):</p>
+                        <div class="flex flex-col sm:flex-row gap-2">
+                            <input type="text" id="ping-ip" placeholder="IP Đích (VD: 10.0.0.50 hoặc 8.8.8.8)" class="flex-1 px-3 py-2 border rounded text-sm focus:ring focus:ring-blue-300 outline-none">
+                            <button onclick="uiSendPing()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded text-sm font-medium transition shadow-sm whitespace-nowrap">
+                                <i class="fas fa-paper-plane mr-1"></i> Gửi gói tin
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Cột phải: Console CLI -->
+            <div class="bg-[#1e1e1e] rounded-xl shadow-lg border border-gray-700 flex flex-col overflow-hidden h-[500px]">
+                <div class="bg-[#2d2d2d] px-4 py-2 flex items-center border-b border-gray-900">
+                    <div class="flex gap-2 mr-4">
+                        <div class="w-3 h-3 rounded-full bg-red-500"></div>
+                        <div class="w-3 h-3 rounded-full bg-yellow-500"></div>
+                        <div class="w-3 h-3 rounded-full bg-green-500"></div>
+                    </div>
+                    <span class="text-gray-400 text-xs font-mono">R1 - Terminal Console (IOS)</span>
+                </div>
+                
+                <div id="console-output" class="flex-1 p-4 overflow-y-auto text-sm font-mono leading-relaxed pb-10">
+                    <div class="text-gray-400">Restoring nvram... OK</div>
+                    <div class="text-gray-400">Press RETURN to get started.</div>
+                    <div class="text-green-400 mt-2">R1> enable</div>
+                    <div class="text-green-400">R1# show ip route</div>
+                    <div class="text-gray-300">Codes: L - local, C - connected, S - static, * - candidate default</div>
+                </div>
+
+                <!-- Input CLI thực tế -->
+                <div class="bg-black p-2 border-t border-gray-800 flex items-center">
+                    <span class="text-green-400 font-mono mr-2">R1(config)#</span>
+                    <input type="text" id="cli-input" class="flex-1 bg-transparent text-green-400 font-mono focus:outline-none w-full" placeholder="Nhập lệnh (vd: ip route 8.8.8.0 255.255.255.0 S0/0/0) và Enter" autocomplete="off" onkeypress="handleCliInput(event)">
+                </div>
+            </div>
+
+        </div>
+    </main>
+
+    <!-- Footer chứng nhận cuộn -->
+    <footer class="bg-black text-white text-center py-4 mt-8 border-t-4 border-blue-700">
+        <p class="text-sm font-semibold tracking-wider">Thiết kế bởi "THE BÁO"</p>
+        <p class="text-xs text-gray-400 mt-1">Mô phỏng IP Connectivity (Routing) - Cuộn tự do tới đáy trang</p>
+    </footer>
+
+    <!-- Logic Javascript -->
+    <script>
+        // --- DATA STATE ---
+        let routeIdCounter = 1;
+        let routingTable = [
+            // Các tuyến kết nối trực tiếp (Không thể xoá)
+            { id: 'C1', type: 'C', network: '192.168.1.0', prefix: 24, intf: 'G0/0', isStatic: false },
+            { id: 'C2', type: 'C', network: '10.0.0.0', prefix: 24, intf: 'G0/1', isStatic: false }
+        ];
+
+        let isAnimating = false;
+
+        // UI Mappings
+        const intfMap = {
+            'G0/0': 'node-lan1',
+            'G0/1': 'node-lan2',
+            'S0/0/0': 'node-wan'
+        };
+
+        // --- DOM Elements ---
+        const tableBody = document.getElementById('table-body');
+        const consoleOut = document.getElementById('console-output');
+        const cliInput = document.getElementById('cli-input');
+        const packetEl = document.getElementById('packet');
+
+        // --- HELPER FUNCTIONS ---
+        // Chuyển Prefix thành Subnet Mask
+        function prefixToMask(prefix) {
+            if (prefix === 0) return '0.0.0.0';
+            let mask = (0xFFFFFFFF << (32 - prefix)) >>> 0;
+            return [
+                (mask >>> 24) & 255,
+                (mask >>> 16) & 255,
+                (mask >>> 8) & 255,
+                mask & 255
+            ].join('.');
+        }
+
+        // Validate IP
+        function isValidIp(ip) {
+            const regex = /^(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/;
+            return regex.test(ip);
+        }
+
+        // Chuyển IP String sang Binary String 32 ký tự để so sánh Prefix
+        function ipToBinStr(ip) {
+            return ip.split('.').map(octet => {
+                return parseInt(octet).toString(2).padStart(8, '0');
+            }).join('');
+        }
+
+        // Áp dụng Prefix vào IP để lấy Network Address chuẩn
+        function getNetworkAddress(ip, prefix) {
+            const binStr = ipToBinStr(ip);
+            const netBinStr = binStr.substring(0, prefix).padEnd(32, '0');
+            
+            // Chuyển lại thành IP
+            const octets = [];
+            for(let i=0; i<32; i+=8) {
+                octets.push(parseInt(netBinStr.substring(i, i+8), 2));
+            }
+            return octets.join('.');
+        }
+
+        // Logic Longest Prefix Match
+        function findBestRoute(destIp) {
+            const destBin = ipToBinStr(destIp);
+            let bestMatch = null;
+            let longestPrefix = -1;
+
+            routingTable.forEach(route => {
+                const routeBin = ipToBinStr(route.network);
+                // Cắt lấy phần prefix của cả 2 chuỗi nhị phân
+                const destPrefixBits = destBin.substring(0, route.prefix);
+                const routePrefixBits = routeBin.substring(0, route.prefix);
+
+                // Nếu Prefix = 0 (Default route), bit so sánh là rỗng '' -> luôn bằng nhau
+                if (destPrefixBits === routePrefixBits) {
+                    if (route.prefix > longestPrefix) {
+                        longestPrefix = route.prefix;
+                        bestMatch = route;
+                    }
+                }
+            });
+
+            return bestMatch;
+        }
+
+        // --- UI & CONSOLE ---
+        function writeConsole(text, type = 'cmd') {
+            const div = document.createElement('div');
+            if (type === 'cmd') div.className = 'text-green-400 mt-1';
+            else if (type === 'info') div.className = 'text-gray-300';
+            else if (type === 'error') div.className = 'text-red-400 font-bold';
+            else if (type === 'syslog') div.className = 'text-red-500 font-bold bg-red-900/30 p-1 border-l-2 border-red-500';
+            else if (type === 'success') div.className = 'text-green-300 font-bold';
+            
+            div.textContent = text;
+            consoleOut.appendChild(div);
+            consoleOut.scrollTop = consoleOut.scrollHeight;
+        }
+
+        function renderTable() {
+            tableBody.innerHTML = '';
+            
+            // Sắp xếp table theo prefix giảm dần (Mô phỏng Longest Prefix Match)
+            const sortedTable = [...routingTable].sort((a, b) => b.prefix - a.prefix);
+
+            sortedTable.forEach(r => {
+                const tr = document.createElement('tr');
+                tr.className = 'border-b border-gray-200 hover:bg-gray-50';
+                
+                let typeBadge = '';
+                if(r.type === 'C') typeBadge = '<span class="bg-blue-100 text-blue-800 text-xs font-bold px-2 py-0.5 rounded">C (Connected)</span>';
+                if(r.type === 'S') typeBadge = '<span class="bg-gray-200 text-gray-800 text-xs font-bold px-2 py-0.5 rounded">S (Static)</span>';
+                if(r.type === 'S*') typeBadge = '<span class="bg-yellow-100 text-yellow-800 text-xs font-bold px-2 py-0.5 rounded">S* (Default)</span>';
+
+                tr.innerHTML = `
+                    <td class="px-2 py-2">${typeBadge}</td>
+                    <td class="px-2 py-2 font-mono text-gray-800">${r.network}</td>
+                    <td class="px-2 py-2 text-center text-gray-600 font-mono">/${r.prefix}</td>
+                    <td class="px-2 py-2 font-bold text-gray-700">${r.intf}</td>
+                    <td class="px-2 py-2 text-center">
+                        ${r.isStatic ? `<button onclick="deleteRoute('${r.id}')" class="text-red-500 hover:text-red-700" title="Xoá Route"><i class="fas fa-times-circle"></i></button>` : '<span class="text-gray-300">-</span>'}
+                    </td>
+                `;
+                tableBody.appendChild(tr);
+            });
+        }
+
+        // --- ACTIONS ---
+        function addRouteLogic(ip, prefix, intf, isCli = false) {
+            if (!isValidIp(ip)) {
+                writeConsole('% Invalid IP address format', 'error');
+                return;
+            }
+            if (prefix < 0 || prefix > 32) {
+                writeConsole('% Invalid prefix', 'error');
+                return;
+            }
+
+            const cleanNet = getNetworkAddress(ip, prefix);
+            const type = prefix === 0 ? 'S*' : 'S';
+
+            // Kiểm tra trùng
+            const exists = routingTable.find(r => r.network === cleanNet && r.prefix === prefix);
+            if (exists) {
+                // Ghi đè
+                exists.intf = intf;
+                exists.type = type;
+            } else {
+                routingTable.push({
+                    id: `S${routeIdCounter++}`,
+                    type: type,
+                    network: cleanNet,
+                    prefix: prefix,
+                    intf: intf,
+                    isStatic: true
+                });
+            }
+
+            if(!isCli) {
+                const mask = prefixToMask(prefix);
+                writeConsole(`R1(config)# ip route ${cleanNet} ${mask} ${intf}`);
+            }
+            
+            renderTable();
+        }
+
+        function uiAddRoute() {
+            const ip = document.getElementById('route-ip').value.trim();
+            const prefixStr = document.getElementById('route-prefix').value.trim();
+            const intf = document.getElementById('route-int').value;
+
+            if(!ip || prefixStr==='') {
+                alert("Vui lòng nhập đủ IP và Prefix!");
+                return;
+            }
+            addRouteLogic(ip, parseInt(prefixStr), intf);
+        }
+
+        function uiAddDefaultRoute() {
+            document.getElementById('route-ip').value = '0.0.0.0';
+            document.getElementById('route-prefix').value = '0';
+            document.getElementById('route-int').value = 'S0/0/0';
+            addRouteLogic('0.0.0.0', 0, 'S0/0/0');
+        }
+
+        function deleteRoute(id) {
+            const route = routingTable.find(r => r.id === id);
+            if(route) {
+                const mask = prefixToMask(route.prefix);
+                writeConsole(`R1(config)# no ip route ${route.network} ${mask} ${route.intf}`);
+                routingTable = routingTable.filter(r => r.id !== id);
+                renderTable();
+            }
+        }
+
+        // Parser CLI
+        function handleCliInput(e) {
+            if (e.key === 'Enter') {
+                const input = cliInput.value.trim();
+                cliInput.value = '';
+                if (!input) return;
+
+                writeConsole(`R1(config)# ${input}`);
+
+                const parts = input.split(' ').filter(p => p !== '');
+                
+                if (parts[0] === 'ping') {
+                    if (parts[1]) processPing(parts[1], true);
+                    else writeConsole('% Incomplete command.', 'error');
+                } 
+                else if (parts.join(' ').startsWith('ip route ')) {
+                    // Cú pháp: ip route <net> <mask> <intf>
+                    if (parts.length === 5) {
+                        const net = parts[2];
+                        const mask = parts[3];
+                        const intf = parts[4];
+                        
+                        // Tính prefix từ mask (đơn giản hoá cho lab)
+                        let prefix = 0;
+                        if(mask === '0.0.0.0') prefix = 0;
+                        else if(mask === '255.0.0.0') prefix = 8;
+                        else if(mask === '255.255.0.0') prefix = 16;
+                        else if(mask === '255.255.255.0') prefix = 24;
+                        else if(mask === '255.255.255.255') prefix = 32;
+                        else {
+                            // Cố gắng đếm bit 1
+                            const binStr = ipToBinStr(mask);
+                            prefix = binStr.indexOf('0') > -1 ? binStr.indexOf('0') : 32;
+                        }
+                        
+                        addRouteLogic(net, prefix, intf, true);
+                    } else {
+                        writeConsole('% Incomplete or invalid ip route command.', 'error');
+                    }
+                }
+                else if (input === 'show ip route') {
+                    writeConsole('Codes: L - local, C - connected, S - static, * - candidate default', 'info');
+                    const sorted = [...routingTable].sort((a, b) => b.prefix - a.prefix);
+                    sorted.forEach(r => {
+                        writeConsole(`${r.type.padEnd(2)}   ${r.network}/${r.prefix} is directly connected, ${r.intf}`, 'info');
+                    });
+                }
+                else {
+                    writeConsole(`% Invalid input detected at '^' marker.`, 'error');
+                }
+            }
+        }
+
+        function resetSystem() {
+            routingTable = [
+                { id: 'C1', type: 'C', network: '192.168.1.0', prefix: 24, intf: 'G0/0', isStatic: false },
+                { id: 'C2', type: 'C', network: '10.0.0.0', prefix: 24, intf: 'G0/1', isStatic: false }
+            ];
+            renderTable();
+            consoleOut.innerHTML = '';
+            writeConsole('Restoring nvram... OK', 'info');
+            writeConsole('R1> enable', 'cmd');
+            writeConsole('R1# configure terminal', 'cmd');
+            document.getElementById('ping-ip').value = '';
+        }
+
+        // --- ANIMATION CORE ---
+        // Hàm lấy toạ độ trung tâm của 1 node so với drawing-area
+        function getCenterPoint(elementId) {
+            const el = document.getElementById(elementId);
+            const parent = document.getElementById('drawing-area');
+            const elRect = el.getBoundingClientRect();
+            const parentRect = parent.getBoundingClientRect();
+            
+            return {
+                x: (elRect.left - parentRect.left) + (elRect.width / 2),
+                y: (elRect.top - parentRect.top) + (elRect.height / 2)
+            };
+        }
+
+        function uiSendPing() {
+            const ip = document.getElementById('ping-ip').value.trim();
+            if (!ip) {
+                alert("Vui lòng nhập IP đích!");
+                return;
+            }
+            writeConsole(`R1# ping ${ip}`);
+            processPing(ip, false);
+        }
+
+        function processPing(destIp, isCli) {
+            if (isAnimating) return;
+            if (!isValidIp(destIp)) {
+                writeConsole('% Unrecognized host or address.', 'error');
+                return;
+            }
+
+            isAnimating = true;
+            writeConsole(`Sending 1, 100-byte ICMP Echos to ${destIp}...`, 'info');
+
+            const ptLan1 = getCenterPoint('node-lan1');
+            const ptR1 = getCenterPoint('node-r1');
+
+            // BƯỚC QUAN TRỌNG: Tắt animation để Snap (dịch chuyển tức thời) gói tin về PC1
+            // Tránh lỗi gói tin bay từ Thùng rác ngược lên PC1
+            packetEl.style.transition = 'none';
+            packetEl.innerHTML = '';
+            packetEl.className = 'packet'; // Reset toàn bộ class rớt phong bì
+            packetEl.style.left = ptLan1.x + 'px';
+            packetEl.style.top = ptLan1.y + 'px';
+            packetEl.style.opacity = '1';
+
+            // Ép trình duyệt vẽ lại khung hình ngay lập tức (Force Reflow) để áp dụng vị trí mới
+            void packetEl.offsetWidth;
+
+            // Bật lại animation và ra lệnh chạy lên R1
+            packetEl.style.transition = 'top 1s linear, left 1s linear, opacity 0.2s';
+            packetEl.style.left = ptR1.x + 'px';
+            packetEl.style.top = ptR1.y + 'px';
+
+            // 2. R1 xử lý: Tra bảng định tuyến
+            setTimeout(() => {
+                const bestRoute = findBestRoute(destIp);
+                
+                if (bestRoute) {
+                    // --- SUCCESS PATH ---
+                    writeConsole(`R1: Routing table lookup... Match [${bestRoute.network}/${bestRoute.prefix}]. Forwarding to ${bestRoute.intf}`, 'success');
+                    
+                    const targetNodeId = intfMap[bestRoute.intf];
+                    const ptDest = getCenterPoint(targetNodeId);
+
+                    // Move to destination
+                    packetEl.style.left = ptDest.x + 'px';
+                    packetEl.style.top = ptDest.y + 'px';
+
+                    // Animate success on destination
+                    setTimeout(() => {
+                        document.getElementById(targetNodeId).classList.add('node-success');
+                        writeConsole(`!!!!!`, 'success');
+                        writeConsole(`Success rate is 100 percent (1/1)`, 'info');
+                        
+                        setTimeout(() => {
+                            packetEl.style.opacity = '0';
+                            document.getElementById(targetNodeId).classList.remove('node-success');
+                            isAnimating = false;
+                        }, 1000);
+                    }, 1000);
+
+                } else {
+                    // --- ERROR / DROP PATH (PHONG BÌ ĐỎ) ---
+                    writeConsole(`R1: Routing table lookup... NO MATCH!`, 'error');
+                    writeConsole(`%IP-4-ROUTING_FAILED: No route to host ${destIp}`, 'syslog');
+                    
+                    document.getElementById('node-r1').classList.add('node-error');
+                    
+                    // Chuyển hình thái thành phong bì đỏ
+                    packetEl.innerHTML = '✉️';
+                    packetEl.classList.add('error-drop');
+                    
+                    // Di chuyển đến thùng rác
+                    const ptDrop = getCenterPoint('node-drop');
+                    packetEl.style.left = ptDrop.x + 'px';
+                    packetEl.style.top = ptDrop.y + 'px';
+
+                    setTimeout(() => {
+                        writeConsole(`.....`, 'error');
+                        writeConsole(`Success rate is 0 percent (0/1)`, 'info');
+                        
+                        setTimeout(() => {
+                            document.getElementById('node-r1').classList.remove('node-error');
+                            packetEl.style.opacity = '0';
+                            isAnimating = false;
+                        }, 500);
+                    }, 1500);
+                }
+
+            }, 1050); // Chờ 1s đến R1 + 50ms delay
+        }
+
+        // Init
+        renderTable();
+    </script>
+</body>
+</html>

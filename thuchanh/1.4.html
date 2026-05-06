@@ -1,0 +1,885 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>THE BÁO: 1.4 Phân biệt TCP và UDP</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Custom scrollbar for CLI and logs */
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px;}
+        .custom-scrollbar::-webkit-scrollbar-track { background: #1e293b; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #475569; border-radius: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #64748b; }
+        
+        .packet {
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            color: white;
+            border-radius: 4px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+            z-index: 10;
+        }
+        #network-canvas {
+            background-image: linear-gradient(90deg, transparent 50%, rgba(255,255,255,.3) 50%);
+            background-size: 20px 20px;
+        }
+        
+        /* Chớp nháy cho terminal */
+        .cursor-blink { animation: blink 1s step-end infinite; }
+        @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+    </style>
+</head>
+<body class="bg-slate-100 text-slate-800 font-sans min-h-screen flex flex-col">
+
+    <!-- Header Sticky -->
+    <header class="sticky top-0 z-50 bg-blue-700 text-white p-4 shadow-lg border-b-4 border-blue-900">
+        <div class="max-w-7xl mx-auto flex items-center justify-between">
+            <div>
+                <h1 class="text-xl md:text-2xl font-bold flex items-center gap-2 tracking-wide">
+                    <span>🌐</span> THE BÁO: 1.4 Phân biệt TCP và UDP
+                </h1>
+                <p class="text-blue-200 text-xs md:text-sm mt-1">Hệ thống mô phỏng truyền tải gói tin & Xử lý sự cố mạng.</p>
+            </div>
+            <div class="hidden md:block bg-blue-800 px-3 py-1 rounded text-xs font-mono border border-blue-600">
+                STATUS: ONLINE
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="flex-grow w-full max-w-7xl mx-auto p-2 md:p-4 flex flex-col gap-4">
+
+        <!-- VÙNG 1: SƠ ĐỒ MÔ PHỎNG (TOPOLOGY) -->
+        <div class="bg-white rounded-xl shadow-md border border-slate-300 flex flex-col overflow-hidden relative">
+            <div class="bg-slate-200 p-2 border-b border-slate-300 flex justify-between items-center">
+                <span class="font-bold text-slate-700 text-sm">📺 Sơ đồ Mạng (Network Topology)</span>
+                <span class="text-xs text-blue-600 animate-pulse md:hidden font-semibold">↔️ Vuốt ngang để xem toàn bộ</span>
+            </div>
+            
+            <!-- Khung cuộn ngang (Horizontal Scroll) cho Mobile, Cố định chiều cao -->
+            <div class="w-full overflow-x-auto custom-scrollbar h-[50vh] md:h-80 relative bg-slate-50">
+                <!-- Kích thước chuẩn cố định (min-w) chống móp méo -->
+                <div class="min-w-[800px] h-full relative flex flex-col p-4">
+                    
+                    <div class="flex justify-between items-end mb-2 z-10 relative mt-auto">
+                        <div class="text-center w-32">
+                            <div class="w-16 h-16 bg-blue-100 rounded-lg flex items-center justify-center text-4xl mb-2 mx-auto border-2 border-blue-400 shadow-md z-20 relative">💻</div>
+                            <span class="font-bold text-sm bg-white px-2 py-1 rounded border">PC_Sender</span>
+                        </div>
+                        <div id="connection-line" class="absolute left-24 right-24 top-8 h-1.5 bg-slate-300 transition-colors duration-500 rounded-full shadow-inner"></div>
+                        <div class="text-center w-32">
+                            <div class="w-16 h-16 bg-emerald-100 rounded-lg flex items-center justify-center text-4xl mb-2 mx-auto border-2 border-emerald-400 shadow-md z-20 relative">🖥️</div>
+                            <span class="font-bold text-sm bg-white px-2 py-1 rounded border">SRV_Receiver</span>
+                        </div>
+                    </div>
+
+                    <!-- Animation Area -->
+                    <div id="network-canvas" class="flex-grow relative bg-slate-200/50 rounded border-2 border-dashed border-slate-300 overflow-hidden mt-4 shadow-inner">
+                        <div id="status-overlay" class="absolute inset-0 flex items-center justify-center text-2xl font-bold text-slate-400 opacity-50 pointer-events-none tracking-widest">
+                            READY
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- VÙNG 2: BẢNG ĐIỀU KHIỂN & CONSOLE CLI -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            
+            <!-- Control Panel -->
+            <div class="bg-white p-4 md:p-5 rounded-xl shadow-md border border-slate-300 flex flex-col gap-4">
+                <h2 class="text-base font-bold border-b pb-2 text-slate-700">⚙️ Bảng Điều Khiển Cấu Hình</h2>
+                
+                <!-- Protocol Selection -->
+                <div>
+                    <label class="block text-sm font-semibold mb-2">1. Giao thức truyền tải (Protocol):</label>
+                    <div class="flex gap-4">
+                        <label class="flex items-center gap-2 cursor-pointer bg-blue-50 p-2 rounded border border-blue-200 flex-1 hover:bg-blue-100 transition">
+                            <input type="radio" name="protocol" value="TCP" checked class="w-4 h-4 text-blue-600">
+                            <span class="font-bold text-blue-700">TCP (Reliable)</span>
+                        </label>
+                        <label class="flex items-center gap-2 cursor-pointer bg-emerald-50 p-2 rounded border border-emerald-200 flex-1 hover:bg-emerald-100 transition">
+                            <input type="radio" name="protocol" value="UDP" class="w-4 h-4 text-emerald-600">
+                            <span class="font-bold text-emerald-700">UDP (Fast)</span>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Message Input -->
+                <div>
+                    <label class="block text-sm font-semibold mb-1">2. Dữ liệu (Message Payload):</label>
+                    <input type="text" id="msg-input" value="HELLO WORLD" maxlength="20" 
+                        class="w-full border border-slate-400 rounded p-2 focus:ring-2 focus:ring-blue-500 focus:outline-none uppercase font-mono bg-slate-50"
+                        placeholder="Nhập chữ (VD: HELLO)">
+                </div>
+
+                <!-- Network Chaos Controls -->
+                <div class="space-y-4 pt-2 border-t">
+                    <label class="block text-sm font-semibold text-red-600">3. Giả lập Sự cố Mạng (Chaos Monkey):</label>
+                    
+                    <div>
+                        <div class="flex justify-between text-sm mb-1">
+                            <span>Tỷ lệ Mất gói (Packet Loss %):</span>
+                            <span id="loss-val" class="font-mono font-bold text-red-600 bg-red-100 px-1 rounded">20%</span>
+                        </div>
+                        <input type="range" id="loss-rate" min="0" max="80" value="20" class="w-full accent-red-600">
+                    </div>
+
+                    <div>
+                        <div class="flex justify-between text-sm mb-1">
+                            <span>Độ Trễ / Lộn xộn (Delay Jitter %):</span>
+                            <span id="chaos-val" class="font-mono font-bold text-orange-600 bg-orange-100 px-1 rounded">30%</span>
+                        </div>
+                        <input type="range" id="chaos-rate" min="0" max="100" value="30" class="w-full accent-orange-500">
+                    </div>
+                </div>
+
+                <!-- Action Buttons -->
+                <div class="flex gap-2 mt-auto pt-4 border-t">
+                    <button id="btn-start" class="flex-1 bg-blue-700 text-white font-bold py-2 px-1 rounded hover:bg-blue-800 transition active:scale-95 shadow border-b-4 border-blue-900 flex justify-center items-center gap-1 text-sm">
+                        <span id="start-icon">🚀</span> <span id="start-text">Thực thi</span>
+                    </button>
+                    <button id="btn-pause" disabled class="flex-1 bg-amber-500 text-white font-bold py-2 px-1 rounded hover:bg-amber-600 transition active:scale-95 shadow border-b-4 border-amber-700 flex justify-center items-center gap-1 text-sm opacity-50 cursor-not-allowed">
+                        <span id="pause-icon">⏸️</span> <span id="pause-text">Tạm Dừng</span>
+                    </button>
+                    <button id="btn-reset" class="flex-1 bg-slate-700 text-white font-bold py-2 px-1 rounded hover:bg-slate-800 transition active:scale-95 shadow border-b-4 border-slate-900 flex justify-center items-center gap-1 text-sm">
+                        <span>🔄</span> Reset Cấu hình
+                    </button>
+                </div>
+            </div>
+
+            <!-- Console CLI -->
+            <div class="bg-slate-900 rounded-xl shadow-md border border-slate-700 flex flex-col overflow-hidden h-[400px] lg:h-auto">
+                <div class="bg-slate-800 p-2 flex justify-between items-center border-b border-slate-700">
+                    <span class="text-slate-300 text-xs font-mono">Terminal - Router#</span>
+                    <span class="flex gap-1">
+                        <div class="w-3 h-3 rounded-full bg-red-500"></div>
+                        <div class="w-3 h-3 rounded-full bg-yellow-500"></div>
+                        <div class="w-3 h-3 rounded-full bg-green-500"></div>
+                    </span>
+                </div>
+                
+                <!-- Output Log -->
+                <div id="cli-output" class="flex-grow p-3 overflow-y-auto custom-scrollbar font-mono text-[13px] leading-relaxed break-words">
+                    <div class="text-slate-400">Cisco IOS Software, C2960 Software...</div>
+                    <div class="text-slate-400">Copyright (c) 1986-2023 by Cisco Systems, Inc.</div>
+                    <div class="text-green-400 mt-2">Router> enable</div>
+                    <div class="text-green-400">Router# <span class="text-slate-400">// Hệ thống sẵn sàng. Bạn có thể bấm nút cấu hình hoặc gõ lệnh trực tiếp.</span></div>
+                    <div class="text-slate-400 italic mt-1">// Cú pháp lệnh tự gõ: send [tcp|udp] [chữ] loss [0-80] chaos [0-100]</div>
+                    <div class="text-slate-400 italic">// Ví dụ: send tcp HELLO loss 20 chaos 30</div>
+                </div>
+
+                <!-- Input CLI -->
+                <div class="p-2 bg-black border-t border-slate-700 flex items-center">
+                    <span class="text-green-400 font-mono mr-2">Router#</span>
+                    <input type="text" id="cli-input" class="bg-transparent text-green-400 font-mono w-full focus:outline-none placeholder-slate-600" placeholder="Nhập lệnh và nhấn Enter..." autocomplete="off" spellcheck="false">
+                </div>
+            </div>
+            
+        </div>
+
+        <!-- VÙNG 3: KẾT QUẢ NHẬN & BỘ ĐỆM (TCP BUFFER) -->
+        <div class="bg-white p-4 md:p-5 rounded-xl shadow-md border border-slate-300 flex flex-col">
+            <h3 class="font-bold border-b pb-2 mb-3 text-slate-700 flex justify-between items-center">
+                <span>📥 Màn hình Kết quả (Receiver Output):</span>
+                <div class="bg-slate-100 border px-3 py-1 rounded text-sm font-mono text-slate-600 shadow-inner">
+                    Time: <span id="timer" class="font-bold text-blue-600">0.0s</span>
+                </div>
+            </h3>
+            
+            <div id="final-result" class="flex-grow flex items-center justify-center text-3xl md:text-5xl font-mono tracking-widest bg-slate-50 rounded-lg border min-h-[120px] break-all p-4 text-slate-800 shadow-inner relative overflow-hidden">
+                <span class="opacity-20">_</span>
+            </div>
+
+            <!-- BỘ ĐỆM TCP (Chỉ hiện khi là TCP) -->
+            <div id="tcp-buffer-container" class="mt-4 pt-3 border-t border-dashed border-slate-300 hidden">
+                <div class="flex justify-between items-center mb-2">
+                    <span class="text-sm font-bold text-slate-700">🗂️ TCP Buffer (Chờ sắp xếp đúng thứ tự):</span>
+                    <span id="tcp-wait-seq" class="text-xs font-bold text-orange-700 bg-orange-100 border border-orange-300 px-2 py-1 rounded shadow-sm">Đang chờ seq=0</span>
+                </div>
+                <div id="tcp-buffer-display" class="flex flex-wrap gap-2 min-h-[40px] p-2 bg-slate-100 rounded border border-slate-200 items-center shadow-inner">
+                    <span class="text-slate-400 text-sm italic">Trống</span>
+                </div>
+                <p class="text-[11px] text-slate-500 mt-1 italic">* TCP bắt buộc phải hiển thị dữ liệu theo đúng thứ tự (Head-of-Line Blocking).</p>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="bg-black text-white text-center py-5 mt-auto border-t-4 border-blue-600">
+        <p class="font-bold tracking-widest text-sm opacity-80">THIẾT KẾ BỞI "THE BÁO"</p>
+        <p class="text-xs opacity-50 mt-1">CCNA Simulator - Đáp ứng tiêu chuẩn Web hiện đại</p>
+    </footer>
+
+    <!-- LOGIC MÔ PHỎNG (JavaScript) -->
+    <script>
+        // DOM Elements
+        const radioTCP = document.querySelector('input[value="TCP"]');
+        const radioUDP = document.querySelector('input[value="UDP"]');
+        const msgInput = document.getElementById('msg-input');
+        const lossRateInput = document.getElementById('loss-rate');
+        const chaosRateInput = document.getElementById('chaos-rate');
+        const lossVal = document.getElementById('loss-val');
+        const chaosVal = document.getElementById('chaos-val');
+        
+        const btnStart = document.getElementById('btn-start');
+        const btnPause = document.getElementById('btn-pause');
+        const btnReset = document.getElementById('btn-reset');
+        
+        const canvas = document.getElementById('network-canvas');
+        const overlay = document.getElementById('status-overlay');
+        const finalResult = document.getElementById('final-result');
+        const cliOutput = document.getElementById('cli-output');
+        const cliInput = document.getElementById('cli-input');
+        const connectionLine = document.getElementById('connection-line');
+        const timerDisplay = document.getElementById('timer');
+
+        // State Variables
+        let isSimulating = false;
+        let isPaused = false;
+        let tcpBuffer = {};
+        let expectedTcpId = 0;
+        let activePackets = 0;
+        
+        let simulationElapsedTime = 0;
+        let lastTimerTick = 0;
+        let timerInterval = null;
+        let currentSimId = 0; 
+        
+        const activeTimeouts = new Set();
+        const activeAnimations = new Set();
+
+        // ---------------------------------------------------------
+        // CUSTOM ENGINE: TIME & ANIMATION FREEZE CONTROLLER
+        // ---------------------------------------------------------
+        function setSimTimeout(cb, delay) {
+            let start = Date.now();
+            let remaining = delay;
+            let timerId;
+            let paused = isPaused;
+
+            const ctrl = {
+                pause: () => {
+                    if (paused) return;
+                    clearTimeout(timerId);
+                    remaining -= (Date.now() - start);
+                    paused = true;
+                },
+                resume: () => {
+                    if (!paused) return;
+                    start = Date.now();
+                    paused = false;
+                    timerId = setTimeout(() => {
+                        activeTimeouts.delete(ctrl);
+                        cb();
+                    }, remaining);
+                },
+                cancel: () => {
+                    clearTimeout(timerId);
+                    activeTimeouts.delete(ctrl);
+                }
+            };
+
+            if (!paused) {
+                timerId = setTimeout(() => {
+                    activeTimeouts.delete(ctrl);
+                    cb();
+                }, remaining);
+            }
+            
+            activeTimeouts.add(ctrl);
+            return ctrl;
+        }
+
+        function createSimAnimation(el, keyframes, options) {
+            const anim = el.animate(keyframes, options);
+            if (isPaused) anim.pause();
+            activeAnimations.add(anim);
+            
+            anim.onfinish = () => activeAnimations.delete(anim);
+            anim.oncancel = () => activeAnimations.delete(anim);
+            
+            return anim;
+        }
+
+        // ---------------------------------------------------------
+        // UI BINDINGS & CLI LOGGING
+        // ---------------------------------------------------------
+        lossRateInput.addEventListener('input', (e) => lossVal.textContent = e.target.value + '%');
+        chaosRateInput.addEventListener('input', (e) => chaosVal.textContent = e.target.value + '%');
+        
+        function scrollToBottom() {
+            cliOutput.scrollTop = cliOutput.scrollHeight;
+        }
+
+        // In log ra màn hình CLI với style Cisco
+        function logCLI(msg, type = 'info') {
+            const timeStr = (simulationElapsedTime / 1000).toFixed(1) + 's';
+            let color = 'text-green-400'; // Default / Info
+            let prefix = '*Mar  1 00:00:00.000: ';
+
+            if (type === 'cmd') {
+                color = 'text-cyan-300 font-bold';
+                prefix = 'Router# ';
+            } else if (type === 'error') {
+                color = 'text-red-500 font-bold';
+            } else if (type === 'warn') {
+                color = 'text-yellow-400';
+            } else if (type === 'system') {
+                color = 'text-blue-300';
+            }
+
+            const div = document.createElement('div');
+            div.className = `${color} mt-1`;
+            
+            if (type === 'cmd') {
+                div.innerHTML = `${prefix} <span class="text-white">${msg}</span>`;
+            } else {
+                div.innerHTML = `<span class="text-slate-500">[${timeStr}]</span> ${msg}`;
+            }
+            
+            cliOutput.appendChild(div);
+            scrollToBottom();
+        }
+
+        // ---------------------------------------------------------
+        // RESET & CORE LIFECYCLE
+        // ---------------------------------------------------------
+        function resetSystem() {
+            isSimulating = false;
+            isPaused = false;
+            currentSimId++; // Hủy mọi luồng cũ
+            
+            // Xóa rác và huỷ hoạt ảnh
+            activeTimeouts.forEach(t => t.cancel());
+            activeTimeouts.clear();
+            activeAnimations.forEach(a => a.cancel());
+            activeAnimations.clear();
+            
+            // Đặt lại các Nút
+            btnStart.disabled = false;
+            btnStart.classList.remove('opacity-50', 'cursor-not-allowed', 'bg-blue-800');
+            document.getElementById('start-icon').textContent = '🚀';
+            document.getElementById('start-text').textContent = 'Thực thi';
+            
+            btnPause.disabled = true;
+            btnPause.classList.add('opacity-50', 'cursor-not-allowed');
+            document.getElementById('pause-icon').textContent = '⏸️';
+            document.getElementById('pause-text').textContent = 'Tạm Dừng';
+            btnPause.classList.replace('bg-emerald-500', 'bg-amber-500');
+            btnPause.classList.replace('border-emerald-700', 'border-amber-700');
+
+            // Reset Canvas & Data
+            canvas.innerHTML = '';
+            canvas.appendChild(overlay);
+            overlay.style.display = 'flex';
+            overlay.textContent = 'READY';
+            
+            finalResult.innerHTML = '<span class="opacity-20">_</span>';
+            connectionLine.classList.remove('bg-blue-500', 'bg-emerald-500', 'shadow-blue-500/50', 'shadow-emerald-500/50');
+            connectionLine.classList.add('bg-slate-300');
+            
+            tcpBuffer = {};
+            expectedTcpId = 0;
+            activePackets = 0;
+            
+            updateTcpBufferUI();
+            
+            clearInterval(timerInterval);
+            simulationElapsedTime = 0;
+            lastTimerTick = Date.now();
+            timerDisplay.textContent = '0.0s';
+            
+            logCLI('Clear configurations and reset networking interfaces...', 'system');
+            logCLI('%SYS-5-CONFIG_I: Configured from console by console', 'system');
+        }
+
+        function finishSimulation() {
+            if (!isSimulating) return;
+            isSimulating = false;
+            
+            btnStart.disabled = false;
+            btnStart.classList.remove('opacity-50', 'cursor-not-allowed');
+            document.getElementById('start-icon').textContent = '🔁';
+            document.getElementById('start-text').textContent = 'Truyền Lại';
+            
+            btnPause.disabled = true;
+            btnPause.classList.add('opacity-50', 'cursor-not-allowed');
+            
+            clearInterval(timerInterval);
+            overlay.style.display = 'flex';
+            overlay.textContent = 'FINISHED';
+            logCLI('%SYS-6-LOGGING: Simulation finished successfully.', 'system');
+        }
+
+        function checkCompletion(totalPackets, simId) {
+            if (activePackets === 0) {
+                // Chốt thời gian
+                clearInterval(timerInterval);
+                if (isSimulating && !isPaused) {
+                    simulationElapsedTime += (Date.now() - lastTimerTick);
+                }
+                timerDisplay.textContent = (simulationElapsedTime / 1000).toFixed(1) + 's';
+
+                setSimTimeout(() => {
+                    if (simId === currentSimId) finishSimulation();
+                }, 800);
+            }
+        }
+
+        function createPacketDOM(id, char, isTCP) {
+            const el = document.createElement('div');
+            const colorClass = isTCP ? 'bg-blue-600 border border-blue-400' : 'bg-emerald-500 border border-emerald-300';
+            el.className = `packet w-8 h-8 md:w-10 md:h-10 text-xs md:text-sm shadow-lg ${colorClass}`;
+            el.textContent = char;
+            el.style.left = '5%';
+            
+            const randY = 15 + Math.random() * 70; 
+            el.style.top = `${randY}%`;
+            
+            canvas.appendChild(el);
+            return el;
+        }
+
+        // ---------------------------------------------------------
+        // START/PAUSE/RESET BUTTON LOGIC
+        // ---------------------------------------------------------
+        btnReset.addEventListener('click', () => {
+            logCLI('clear configuration all', 'cmd');
+            resetSystem();
+        });
+
+        btnPause.addEventListener('click', () => {
+            if (!isSimulating) return;
+            isPaused = !isPaused;
+            
+            if (isPaused) {
+                document.getElementById('pause-icon').textContent = '▶️';
+                document.getElementById('pause-text').textContent = 'Tiếp tục';
+                btnPause.classList.replace('bg-amber-500', 'bg-emerald-500');
+                btnPause.classList.replace('border-amber-700', 'border-emerald-700');
+                
+                activeTimeouts.forEach(t => t.pause());
+                activeAnimations.forEach(a => a.pause());
+                logCLI('%SYS-5-PAUSE: System execution paused by user.', 'warn');
+            } else {
+                document.getElementById('pause-icon').textContent = '⏸️';
+                document.getElementById('pause-text').textContent = 'Tạm Dừng';
+                btnPause.classList.replace('bg-emerald-500', 'bg-amber-500');
+                btnPause.classList.replace('border-emerald-700', 'border-amber-700');
+                
+                lastTimerTick = Date.now();
+                activeTimeouts.forEach(t => t.resume());
+                activeAnimations.forEach(a => a.play());
+                logCLI('%SYS-5-RESUME: System execution resumed.', 'info');
+            }
+        });
+
+        btnStart.addEventListener('click', () => {
+            if (isSimulating) return;
+            
+            const protocol = document.querySelector('input[name="protocol"]:checked').value;
+            const msg = msgInput.value.trim() || 'HELLO';
+            const loss = lossRateInput.value;
+            const chaos = chaosRateInput.value;
+
+            // Tự động sinh lệnh CLI
+            const cmd = `traffic-generator send ${protocol.toLowerCase()} payload "${msg}" loss-rate ${loss} jitter ${chaos}`;
+            logCLI(cmd, 'cmd');
+            
+            startSimulation(protocol, msg, loss, chaos);
+        });
+
+        // ---------------------------------------------------------
+        // CLI INPUT PARSER
+        // ---------------------------------------------------------
+        cliInput.addEventListener('keypress', function (e) {
+            if (e.key === 'Enter') {
+                const rawCmd = this.value.trim();
+                if (!rawCmd) return;
+                
+                logCLI(rawCmd, 'cmd');
+                this.value = '';
+
+                const cmd = rawCmd.toLowerCase();
+                
+                if (cmd === 'clear' || cmd === 'reset') {
+                    resetSystem();
+                    cliOutput.innerHTML = ''; // Xóa luôn màn hình
+                    return;
+                }
+
+                // Parser đơn giản: send tcp hello loss 20 chaos 30
+                if (cmd.startsWith('send ')) {
+                    if (isSimulating) {
+                        logCLI('%ERROR: A simulation is already running. Please wait or clear.', 'error');
+                        return;
+                    }
+
+                    const parts = cmd.split(' ');
+                    const proto = parts[1] === 'udp' ? 'UDP' : 'TCP';
+                    let text = 'CLI_TEST';
+                    let loss = 20;
+                    let chaos = 30;
+
+                    if (parts.length > 2) text = parts[2].toUpperCase().replace(/"/g, '');
+                    
+                    // Cập nhật UI để đồng bộ với CLI
+                    if (proto === 'TCP') radioTCP.checked = true; else radioUDP.checked = true;
+                    msgInput.value = text;
+                    
+                    const lossIdx = parts.indexOf('loss');
+                    if (lossIdx !== -1 && parts[lossIdx+1]) {
+                        loss = parseInt(parts[lossIdx+1]);
+                        lossRateInput.value = loss;
+                        lossVal.textContent = loss + '%';
+                    }
+
+                    const chaosIdx = parts.indexOf('chaos');
+                    if (chaosIdx !== -1 && parts[chaosIdx+1]) {
+                        chaos = parseInt(parts[chaosIdx+1]);
+                        chaosRateInput.value = chaos;
+                        chaosVal.textContent = chaos + '%';
+                    }
+
+                    startSimulation(proto, text, loss, chaos);
+                } else {
+                    logCLI(`% Invalid input detected at '^' marker.`, 'error');
+                }
+            }
+        });
+
+        // ---------------------------------------------------------
+        // MAIN SIMULATION TRIGGER
+        // ---------------------------------------------------------
+        function startSimulation(protocol, rawMsg, lossValStr, chaosValStr) {
+            const msg = rawMsg.replace(/\s/g, '_'); // Replace space for visibility
+            
+            isSimulating = true;
+            isPaused = false;
+            currentSimId++;
+            const simId = currentSimId;
+
+            // Disable Start, Enable Pause
+            btnStart.disabled = true;
+            btnStart.classList.add('opacity-50', 'cursor-not-allowed');
+            document.getElementById('start-icon').textContent = '⏳';
+            document.getElementById('start-text').textContent = 'Đang chạy';
+            
+            btnPause.disabled = false;
+            btnPause.classList.remove('opacity-50', 'cursor-not-allowed');
+
+            // Reset internal state but keep CLI log
+            overlay.style.display = 'none';
+            finalResult.innerHTML = '';
+            connectionLine.classList.remove('bg-blue-500', 'bg-emerald-500', 'shadow-blue-500/50', 'shadow-emerald-500/50');
+            connectionLine.classList.add('bg-slate-300');
+            
+            tcpBuffer = {};
+            expectedTcpId = 0;
+            updateTcpBufferUI();
+            
+            clearInterval(timerInterval);
+            simulationElapsedTime = 0;
+            lastTimerTick = Date.now();
+            timerDisplay.textContent = '0.0s';
+            
+            timerInterval = setInterval(() => {
+                if (isSimulating && !isPaused) {
+                    simulationElapsedTime += (Date.now() - lastTimerTick);
+                    timerDisplay.textContent = (simulationElapsedTime / 1000).toFixed(1) + 's';
+                }
+                lastTimerTick = Date.now();
+            }, 100);
+
+            // Failsafe Watchdog
+            setSimTimeout(() => {
+                if (isSimulating && simId === currentSimId) {
+                    logCLI('%SYS-3-TIMEOUT: Simulation watchdog triggered. Force stopping.', 'error');
+                    finishSimulation();
+                }
+            }, 60000); // 60 giây max
+
+            const lossRate = parseInt(lossValStr) / 100;
+            const chaosRate = parseInt(chaosValStr) / 100;
+            const packets = msg.split('').map((char, index) => ({ id: index, char: char }));
+            activePackets = packets.length;
+
+            logCLI(`%IP-5-ROUTING: Starting Payload transfer... Size: ${activePackets} bytes.`, 'system');
+
+            if (protocol === 'TCP') {
+                simulateTCP(packets, lossRate, chaosRate, simId);
+            } else {
+                simulateUDP(packets, lossRate, chaosRate, simId);
+            }
+        }
+
+        // ---------------------------------------------------------
+        // TCP SIMULATION ENGINE
+        // ---------------------------------------------------------
+        function simulateTCP(packets, lossRate, chaosRate, simId) {
+            logCLI('%TCP-6-HANDSHAKE: Initiating 3-way Handshake (SYN, SYN-ACK, ACK)...', 'warn');
+            
+            setSimTimeout(() => {
+                if (simId !== currentSimId) return;
+                logCLI('Sender -> SYN -> Receiver', 'info');
+                
+                setSimTimeout(() => {
+                    if (simId !== currentSimId) return;
+                    logCLI('Receiver -> SYN-ACK -> Sender', 'info');
+                    
+                    setSimTimeout(() => {
+                        if (simId !== currentSimId) return;
+                        logCLI('Sender -> ACK -> Receiver', 'info');
+                        logCLI('%TCP-5-ESTABLISHED: Connection state changed to ESTABLISHED.', 'system');
+                        
+                        // Đổi màu dây mạng sang màu xanh TCP
+                        connectionLine.classList.replace('bg-slate-300', 'bg-blue-500');
+                        connectionLine.classList.add('shadow-blue-500/50');
+                        
+                        sendAllTCP(packets, lossRate, chaosRate, simId);
+                    }, 400); 
+                }, 400);
+            }, 400);
+        }
+
+        function sendAllTCP(packets, lossRate, chaosRate, simId) {
+            packets.forEach((pkt, index) => {
+                setSimTimeout(() => {
+                    if (simId !== currentSimId) return;
+                    sendSinglePacketTCP(pkt, lossRate, chaosRate, simId, 0, packets.length); 
+                }, index * 250); 
+            });
+        }
+
+        function sendSinglePacketTCP(pkt, lossRate, chaosRate, simId, retryCount, totalPackets) {
+            const el = createPacketDOM(pkt.id, pkt.char, true);
+            
+            // Giảm rớt sau mỗi lần gửi lại để đảm bảo kết thúc được
+            const effectiveLoss = Math.max(0, lossRate - (retryCount * 0.25));
+            const isLost = Math.random() < effectiveLoss;
+            const baseTime = 800; 
+            const delay = baseTime + Math.random() * (chaosRate * 1500); 
+            
+            if (isLost) {
+                logCLI(`TCP Tx: Seg [${pkt.char}] Seq=${pkt.id} Sending...`);
+                createSimAnimation(el, [
+                    { left: '10%', opacity: 1, transform: 'translateY(-50%) scale(1)' },
+                    { left: '45%', opacity: 1, transform: 'translateY(-50%) scale(1)' }
+                ], { duration: delay * 0.4, fill: 'forwards' });
+
+                setSimTimeout(() => {
+                    if (simId !== currentSimId) { el.remove(); return; }
+                    
+                    // Metaphor: Phong bì đỏ / Lỗi
+                    el.textContent = '✉️';
+                    el.classList.replace('bg-blue-600', 'bg-red-600');
+                    el.classList.replace('border-blue-400', 'border-red-400');
+                    logCLI(`%TCP-4-DROP: Seg [${pkt.char}] Seq=${pkt.id} LOST! Timeout trigger.`, 'error');
+                    
+                    // Hoạt ảnh rớt xuống
+                    createSimAnimation(el, [
+                        { transform: 'translateY(-50%) scale(1)', opacity: 1 },
+                        { transform: 'translateY(100px) scale(0)', opacity: 0 }
+                    ], {duration: 400, fill: 'forwards', easing: 'ease-in'});
+                    
+                    setSimTimeout(() => {
+                        el.remove();
+                        if (simId !== currentSimId) return;
+                        
+                        setSimTimeout(() => {
+                            if (simId !== currentSimId) return;
+                            logCLI(`%TCP-4-RETRANSMIT: Retransmitting Seg [${pkt.char}] Seq=${pkt.id} (Attempt ${retryCount + 1})...`, 'warn');
+                            sendSinglePacketTCP(pkt, lossRate, chaosRate, simId, retryCount + 1, totalPackets); 
+                        }, 400);
+                    }, 400);
+                }, delay * 0.4);
+
+            } else {
+                logCLI(`TCP Tx: Seg [${pkt.char}] Seq=${pkt.id} Sending...`);
+                createSimAnimation(el, [
+                    { left: '10%' },
+                    { left: '85%' } // Tới máy chủ đích
+                ], { duration: delay, fill: 'forwards', easing: 'linear' });
+
+                setSimTimeout(() => {
+                    el.remove();
+                    if (simId !== currentSimId) return;
+                    logCLI(`TCP Rx: Seg [${pkt.char}] Seq=${pkt.id} Arrived.`);
+                    handleTCPReceive(pkt, totalPackets, simId);
+                }, delay);
+            }
+        }
+
+        function handleTCPReceive(pkt, totalPackets, simId) {
+            const id = parseInt(pkt.id);
+            tcpBuffer[id] = pkt.char;
+            
+            if (id !== expectedTcpId) {
+                logCLI(`%TCP-4-OUTOFORDER: Seg Seq=${id} arrived early. Buffered (Awaiting Seq=${expectedTcpId}).`, 'warn');
+            }
+
+            const oldPlaceholder = document.getElementById('tcp-waiting-placeholder');
+            if (oldPlaceholder) oldPlaceholder.remove();
+
+            let charsToPrint = [];
+            while(tcpBuffer.hasOwnProperty(expectedTcpId)) {
+                charsToPrint.push(tcpBuffer[expectedTcpId]);
+                expectedTcpId++;
+                activePackets--;
+            }
+
+            if (charsToPrint.length > 0) {
+                charsToPrint.forEach(char => {
+                    const span = document.createElement('span');
+                    span.textContent = char;
+                    span.className = "text-blue-600 animate-pulse font-bold transition-all duration-300 transform scale-110";
+                    finalResult.appendChild(span);
+                    
+                    setSimTimeout(() => {
+                        if(span) {
+                            span.className = "text-slate-800 font-bold transition-all duration-300 transform scale-100";
+                        }
+                    }, 300);
+                });
+            }
+
+            // Metaphor: Báo kẹt trên màn hình UI
+            const keys = Object.keys(tcpBuffer).map(Number);
+            const hasFuturePackets = keys.some(seq => seq >= expectedTcpId && tcpBuffer[seq] !== undefined);
+            
+            if (hasFuturePackets) {
+                const ph = document.createElement('span');
+                ph.id = 'tcp-waiting-placeholder';
+                ph.className = 'text-xs text-orange-600 italic ml-2 animate-pulse bg-orange-100 px-2 py-1 rounded-md border border-orange-300 align-middle shadow-sm';
+                ph.textContent = `[TCP kẹt: Chờ Seq=${expectedTcpId}...]`;
+                finalResult.appendChild(ph);
+            }
+
+            updateTcpBufferUI();
+            checkCompletion(totalPackets, simId);
+        }
+
+        function updateTcpBufferUI() {
+            const bufferContainer = document.getElementById('tcp-buffer-container');
+            const bufferDisplay = document.getElementById('tcp-buffer-display');
+            const waitSeqDisplay = document.getElementById('tcp-wait-seq');
+            
+            const isTCP = document.querySelector('input[name="protocol"]:checked').value === 'TCP';
+            if (!isTCP) {
+                bufferContainer.style.display = 'none';
+                return;
+            }
+            bufferContainer.style.display = 'block';
+            bufferDisplay.innerHTML = '';
+            
+            waitSeqDisplay.textContent = `Đang chờ seq=${expectedTcpId}`;
+            
+            const keys = Object.keys(tcpBuffer).map(Number).sort((a,b) => a-b);
+            let hasItems = false;
+            keys.forEach(seq => {
+                if (seq >= expectedTcpId && tcpBuffer[seq] !== undefined) {
+                    hasItems = true;
+                    const span = document.createElement('span');
+                    span.className = 'bg-orange-100 text-orange-800 text-xs px-2 py-1 rounded font-mono font-bold border border-orange-300 shadow-sm';
+                    span.textContent = `[${tcpBuffer[seq]}] seq=${seq}`;
+                    bufferDisplay.appendChild(span);
+                }
+            });
+            
+            if (!hasItems) {
+                bufferDisplay.innerHTML = '<span class="text-slate-400 text-sm italic">Trống</span>';
+            }
+        }
+
+        // ---------------------------------------------------------
+        // UDP SIMULATION ENGINE
+        // ---------------------------------------------------------
+        function simulateUDP(packets, lossRate, chaosRate, simId) {
+            logCLI('%UDP-6-START: No Handshake. Firing packets immediately!', 'warn');
+            connectionLine.classList.replace('bg-slate-300', 'bg-emerald-500');
+            connectionLine.classList.add('shadow-emerald-500/50');
+            
+            packets.forEach((pkt, index) => {
+                setSimTimeout(() => {
+                    if (simId !== currentSimId) return;
+                    sendSinglePacketUDP(pkt, lossRate, chaosRate, packets.length, simId);
+                }, index * 80); // Rất nhanh
+            });
+        }
+
+        function sendSinglePacketUDP(pkt, lossRate, chaosRate, totalPackets, simId) {
+            const el = createPacketDOM(pkt.id, pkt.char, false); // false = UDP (green)
+            
+            const isLost = Math.random() < lossRate;
+            const baseTime = 600; 
+            const delay = baseTime + Math.random() * (chaosRate * 2000); 
+            
+            logCLI(`UDP Tx: Datagram [${pkt.char}] Sending...`);
+
+            if (isLost) {
+                createSimAnimation(el, [
+                    { left: '10%', opacity: 1, transform: 'translateY(-50%) scale(1)' },
+                    { left: '40%', opacity: 1, transform: 'translateY(-50%) scale(1)' }
+                ], { duration: delay * 0.4, fill: 'forwards' });
+
+                setSimTimeout(() => {
+                    if (simId !== currentSimId) { el.remove(); return; }
+                    
+                    // Metaphor: Phong bì đỏ / Lỗi rơi xuống
+                    el.textContent = '✉️';
+                    el.classList.replace('bg-emerald-500', 'bg-red-600');
+                    el.classList.replace('border-emerald-300', 'border-red-400');
+                    logCLI(`%UDP-3-DROP: Datagram [${pkt.char}] LOST in transit! (No retransmission)`, 'error');
+                    
+                    createSimAnimation(el, [
+                        { transform: 'translateY(-50%) scale(1)', opacity: 1 },
+                        { transform: 'translateY(100px) scale(0)', opacity: 0 }
+                    ], {duration: 400, fill: 'forwards', easing: 'ease-in'});
+                    
+                    setSimTimeout(() => {
+                        el.remove();
+                        if (simId !== currentSimId) return;
+                        activePackets--;
+                        checkCompletion(totalPackets, simId);
+                    }, 400);
+                }, delay * 0.4);
+                
+            } else {
+                createSimAnimation(el, [
+                    { left: '10%' },
+                    { left: '85%' }
+                ], { duration: delay, fill: 'forwards', easing: 'linear' });
+
+                setSimTimeout(() => {
+                    el.remove();
+                    if (simId !== currentSimId) return;
+                    logCLI(`UDP Rx: Datagram [${pkt.char}] Arrived.`);
+                    
+                    // UDP in kết quả ngay lập tức bất chấp thứ tự
+                    const span = document.createElement('span');
+                    span.textContent = pkt.char;
+                    span.className = "text-emerald-600 font-bold transition-all duration-300 transform scale-110";
+                    finalResult.appendChild(span);
+                    
+                    setSimTimeout(() => {
+                        if(span) {
+                            span.className = "text-slate-800 font-bold transition-all duration-300 transform scale-100";
+                        }
+                    }, 300);
+
+                    activePackets--;
+                    checkCompletion(totalPackets, simId);
+                }, delay);
+            }
+        }
+    </script>
+</body>
+</html>

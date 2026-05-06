@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>THE BÁO: [Phần 1: Nền tảng về mạng] / 1.3 Các loại cáp mạng và cổng kết nối</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        
+        .console-scroll::-webkit-scrollbar-track { background: #111827; }
+        .console-scroll::-webkit-scrollbar-thumb { background: #374151; }
+
+        .device-card { transition: all 0.2s ease; cursor: pointer; }
+        .device-card:hover { transform: translateY(-2px); box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06); }
+        .selected { border-color: #3b82f6; background-color: #eff6ff; border-width: 2px; }
+        
+        /* Animations */
+        @keyframes flowData {
+            0% { left: 0%; opacity: 0; transform: translateX(-50%) scale(0.8); }
+            10% { opacity: 1; transform: translateX(-50%) scale(1.2); }
+            90% { opacity: 1; transform: translateX(-50%) scale(1.2); }
+            100% { left: 100%; opacity: 0; transform: translateX(-50%) scale(0.8); }
+        }
+        
+        @keyframes dropError {
+            0% { left: 0%; top: 50%; opacity: 0; transform: translate(-50%, -50%) rotate(0deg); }
+            20% { opacity: 1; top: 50%; transform: translate(-50%, -50%) rotate(15deg); }
+            40% { left: 50%; top: 50%; transform: translate(-50%, -50%) rotate(-10deg) scale(1.3); }
+            60% { left: 50%; top: 50%; transform: translate(-50%, -50%) rotate(5deg) scale(1.3); }
+            100% { left: 50%; top: 120%; opacity: 0; transform: translate(-50%, -50%) rotate(45deg) scale(0.8); }
+        }
+
+        .anim-success { animation: flowData 2s ease-in-out forwards; }
+        .anim-error { animation: dropError 2.5s ease-in-out forwards; }
+        
+        .port-highlight { animation: pulse 1.5s infinite; }
+        @keyframes pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.5); } 50% { box-shadow: 0 0 0 10px rgba(59, 130, 246, 0); } }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen flex flex-col text-gray-800">
+
+    <!-- Sticky Header -->
+    <header class="sticky top-0 z-50 bg-blue-700 text-white shadow-lg">
+        <div class="container mx-auto p-4 flex justify-between items-center">
+            <div>
+                <h1 class="text-lg md:text-xl font-bold uppercase tracking-wide">
+                    <i class="fa-solid fa-server mr-2"></i>THE BÁO: Phần 1: Nền tảng về mạng
+                </h1>
+                <p class="text-sm text-blue-200 mt-1 font-medium">1.3 Các loại cáp mạng và cổng kết nối (Cáp đồng, cáp quang, PoE)</p>
+            </div>
+            <button onclick="resetSim()" class="hidden md:flex bg-red-500 hover:bg-red-600 px-4 py-2 rounded-lg text-sm font-bold shadow transition items-center gap-2">
+                <i class="fa-solid fa-power-off"></i> Reset cấu hình
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="flex-grow container mx-auto p-4 flex flex-col gap-6">
+        
+        <!-- Sơ đồ mô phỏng (Topology) -->
+        <div class="bg-white rounded-xl shadow-md border border-gray-200 flex flex-col overflow-hidden">
+            <div class="bg-gray-50 border-b p-3 flex justify-between items-center">
+                <h2 class="font-bold text-gray-700"><i class="fa-solid fa-sitemap text-blue-500 mr-2"></i>Sơ đồ Mô phỏng Mạng Vật lý</h2>
+                <span class="text-xs text-blue-600 animate-pulse md:hidden font-semibold border border-blue-200 bg-blue-50 px-2 py-1 rounded">
+                    <i class="fa-solid fa-arrows-left-right mr-1"></i>Vuốt ngang để xem
+                </span>
+            </div>
+            
+            <!-- Horizontal scroll container -->
+            <div class="w-full h-[40vh] md:h-[350px] overflow-x-auto overflow-y-hidden relative bg-slate-50 relative group">
+                <!-- Inner container width fixed minimum to avoid squeezing -->
+                <div class="min-w-[800px] h-full flex justify-between items-center px-16 relative">
+                    
+                    <!-- Source Element -->
+                    <div class="flex flex-col items-center z-10 w-40 relative">
+                        <div id="vis-src-box" class="w-24 h-24 bg-white rounded-2xl shadow-lg border-4 border-gray-200 flex flex-col items-center justify-center transition-all duration-300">
+                            <i id="vis-src-icon" class="fa-solid fa-network-wired text-4xl text-gray-400"></i>
+                        </div>
+                        <div id="vis-src-port" class="absolute -right-3 top-1/2 -translate-y-1/2 w-6 h-6 bg-gray-300 border-2 border-gray-400 flex items-center justify-center text-[8px] font-bold text-gray-600 rounded-sm">P1</div>
+                        <h3 id="vis-src-name" class="font-bold text-gray-700 mt-4 text-center">Thiết bị Nguồn</h3>
+                        <span id="vis-src-desc" class="text-xs text-gray-500 text-center">Chưa cấu hình</span>
+                    </div>
+
+                    <!-- Cable Line -->
+                    <div class="flex-grow h-32 relative flex items-center justify-center mx-4">
+                        <!-- Standard dashed placeholder -->
+                        <div id="vis-cable-bg" class="absolute w-full border-t-4 border-dashed border-gray-300 top-1/2 -translate-y-1/2"></div>
+                        <!-- Actual Cable -->
+                        <div id="vis-cable-solid" class="absolute w-0 h-2 bg-blue-500 top-1/2 -translate-y-1/2 transition-all duration-700 left-0"></div>
+                        
+                        <!-- Distance Label -->
+                        <div id="vis-cable-label" class="absolute -top-6 bg-white px-3 py-1 rounded-full shadow-sm text-xs font-bold text-gray-600 border border-gray-200">Khoảng cách: --</div>
+                        
+                        <!-- Animation Container (Dots / Envelopes) -->
+                        <div id="anim-container" class="absolute top-1/2 w-full h-0 pointer-events-none">
+                            <!-- JS injected elements go here -->
+                        </div>
+                    </div>
+
+                    <!-- Dest Element -->
+                    <div class="flex flex-col items-center z-10 w-40 relative">
+                        <div id="vis-dst-port" class="absolute -left-3 top-1/2 -translate-y-1/2 w-6 h-6 bg-gray-300 border-2 border-gray-400 flex items-center justify-center text-[8px] font-bold text-gray-600 rounded-sm">P1</div>
+                        <div id="vis-dst-box" class="w-24 h-24 bg-white rounded-2xl shadow-lg border-4 border-gray-200 flex flex-col items-center justify-center transition-all duration-300">
+                            <i id="vis-dst-icon" class="fa-solid fa-desktop text-4xl text-gray-400"></i>
+                        </div>
+                        <h3 id="vis-dst-name" class="font-bold text-gray-700 mt-4 text-center">Thiết bị Đích</h3>
+                        <span id="vis-dst-desc" class="text-xs text-gray-500 text-center">Chưa cấu hình</span>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+
+        <!-- Bảng điều khiển & Cấu hình -->
+        <div class="bg-white rounded-xl shadow-md border border-gray-200 p-4 lg:p-6">
+            <h2 class="font-bold text-lg mb-4 text-gray-800 flex items-center">
+                <i class="fa-solid fa-sliders text-blue-600 mr-2"></i> Bảng Điều Khiển Vật Lý
+            </h2>
+            
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                
+                <!-- Cột 1: Nguồn -->
+                <div class="flex flex-col gap-3">
+                    <div class="bg-blue-50 text-blue-800 text-sm font-bold p-2 rounded text-center border border-blue-200">1. CHỌN THIẾT BỊ NGUỒN</div>
+                    <div class="grid grid-cols-1 gap-2" id="source-container"></div>
+                </div>
+
+                <!-- Cột 2: Cáp & Khoảng cách -->
+                <div class="flex flex-col gap-3">
+                    <div class="bg-gray-100 text-gray-800 text-sm font-bold p-2 rounded text-center border border-gray-300">2. MÔI TRƯỜNG TRUYỀN DẪN</div>
+                    <div class="grid grid-cols-2 gap-2" id="cable-container"></div>
+                    
+                    <div class="mt-2 bg-gray-50 p-3 rounded-lg border border-gray-200">
+                        <label class="block text-xs font-bold text-gray-700 mb-2">Khoảng cách kéo cáp: <span id="dist-val" class="text-blue-600 text-base">50m</span></label>
+                        <input type="range" id="distance" min="1" max="500" value="50" class="w-full h-2 bg-gray-300 rounded-lg appearance-none cursor-pointer">
+                        <div class="flex justify-between text-[10px] font-mono text-gray-500 mt-1">
+                            <span>1m</span><span>100m</span><span>500m</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Cột 3: Đích -->
+                <div class="flex flex-col gap-3">
+                    <div class="bg-green-50 text-green-800 text-sm font-bold p-2 rounded text-center border border-green-200">3. CHỌN THIẾT BỊ ĐÍCH</div>
+                    <div class="grid grid-cols-1 gap-2" id="dest-container"></div>
+                </div>
+            </div>
+
+            <!-- Action Area -->
+            <div class="mt-8 flex flex-col md:flex-row items-center gap-4 border-t pt-4">
+                <button onclick="executeConnection()" class="w-full md:w-auto bg-green-600 hover:bg-green-700 text-white px-8 py-3 rounded-xl font-bold text-lg shadow-lg transition flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-plug"></i> Thực Thi Cắm Cáp (No Shutdown)
+                </button>
+                <button onclick="resetSim()" class="w-full md:w-auto md:hidden bg-red-500 hover:bg-red-600 text-white px-8 py-3 rounded-xl font-bold shadow-lg transition flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-power-off"></i> Reset cấu hình
+                </button>
+                <p class="text-sm text-gray-500 italic flex-grow text-center md:text-left">
+                    * Nhấn Thực thi để mô phỏng việc cắm cáp và bật cổng. Lệnh CLI sẽ tự động sinh ở màn hình Console bên dưới.
+                </p>
+            </div>
+        </div>
+
+        <!-- Màn hình Console CLI -->
+        <div class="bg-gray-900 rounded-xl shadow-xl border border-gray-800 flex flex-col h-[350px] font-mono text-sm overflow-hidden mt-2">
+            <!-- Console Header -->
+            <div class="bg-gray-800 px-4 py-2 border-b border-gray-700 flex justify-between items-center shrink-0">
+                <div class="flex items-center gap-2">
+                    <div class="flex gap-1.5">
+                        <div class="w-3 h-3 rounded-full bg-red-500"></div>
+                        <div class="w-3 h-3 rounded-full bg-yellow-500"></div>
+                        <div class="w-3 h-3 rounded-full bg-green-500"></div>
+                    </div>
+                    <span class="text-gray-300 text-xs font-bold ml-2">Cisco IOS Command Line Interface</span>
+                </div>
+                <button onclick="clearCLI()" class="text-gray-400 hover:text-white text-xs px-2 py-1 bg-gray-700 rounded"><i class="fa-solid fa-eraser"></i> Clear</button>
+            </div>
+            
+            <!-- Console Output -->
+            <div id="cli-output" class="p-4 overflow-y-auto console-scroll flex-grow text-gray-300 flex flex-col gap-1 whitespace-pre-wrap">
+                <div class="text-green-400 font-bold">Cisco IOS Software, C2960X Software (C2960X-UNIVERSALK9-M), Version 15.2(2)E</div>
+                <div>Copyright (c) 1986-2023 by Cisco Systems, Inc.</div>
+                <div class="text-yellow-400 mt-2">Syslog console enabled. Vui lòng cấu hình thiết bị qua Bảng điều khiển hoặc nhập lệnh.</div>
+                <br>
+            </div>
+
+            <!-- Console Input -->
+            <div class="bg-black px-4 py-2 flex items-center gap-2 shrink-0 border-t border-gray-800">
+                <span class="text-green-400 font-bold" id="cli-prompt">Switch></span>
+                <input type="text" id="cli-input" class="bg-transparent border-none text-gray-100 outline-none flex-grow font-mono" placeholder="Nhập lệnh (VD: ping, show ip int brief)..." autocomplete="off" spellcheck="false">
+            </div>
+        </div>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="bg-black text-gray-400 text-center py-5 mt-auto border-t-4 border-blue-600">
+        <p class="text-sm">Hệ thống Mô phỏng Mạng Tương tác CCNA</p>
+        <p class="font-bold text-white mt-1">Thiết kế bởi "THE BÁO"</p>
+    </footer>
+
+    <!-- Logic Script -->
+    <script>
+        // --- DATA ---
+        const sources = [
+            { id: 's1', name: 'Access Switch', icon: 'fa-network-wired', port: 'RJ45', hasPoE: false, prompt: 'Switch', color: 'border-blue-400', desc: 'Switch L2 thường, cổng RJ45 (Đồng)' },
+            { id: 's2', name: 'PoE Switch', icon: 'fa-plug-circle-bolt', port: 'RJ45', hasPoE: true, prompt: 'PoE-SW', color: 'border-purple-500', desc: 'Cấp điện (PoE) qua cáp đồng RJ45' },
+            { id: 's3', name: 'Core Switch', icon: 'fa-server', port: 'SFP', hasPoE: false, prompt: 'Core', color: 'border-amber-500', desc: 'Giao tiếp tốc độ cao qua cổng quang SFP' }
+        ];
+
+        const cables = [
+            { id: 'c1', name: 'Cáp Đồng (Cat6)', icon: 'fa-ethernet', type: 'RJ45', maxDist: 100, poe: true, color: '#3b82f6', bgClass: 'bg-blue-500', desc: 'Max 100m, hỗ trợ PoE' },
+            { id: 'c2', name: 'Cáp Quang (Fiber)', icon: 'fa-bolt', type: 'SFP', maxDist: 10000, poe: false, color: '#f59e0b', bgClass: 'bg-amber-500', desc: 'Chạy xa km, Không có điện' }
+        ];
+
+        const destinations = [
+            { id: 'd1', name: 'PC / Laptop', icon: 'fa-desktop', port: 'RJ45', needPoE: false, desc: 'Máy tính cá nhân, cắm điện tường' },
+            { id: 'd2', name: 'Camera IP', icon: 'fa-video', port: 'RJ45', needPoE: true, desc: 'Cần nhận nguồn điện qua PoE để chạy' },
+            { id: 'd3', name: 'Storage Server', icon: 'fa-database', port: 'SFP', needPoE: false, desc: 'Máy chủ dùng cổng quang SFP' }
+        ];
+
+        // --- STATE ---
+        let state = {
+            src: null,
+            cab: null,
+            dst: null,
+            dist: 50,
+            connected: false
+        };
+
+        // --- DOM Elements ---
+        const UI = {
+            srcContainer: document.getElementById('source-container'),
+            cabContainer: document.getElementById('cable-container'),
+            dstContainer: document.getElementById('dest-container'),
+            distInput: document.getElementById('distance'),
+            distVal: document.getElementById('dist-val'),
+            
+            // Visualizer
+            vSrcBox: document.getElementById('vis-src-box'),
+            vSrcIcon: document.getElementById('vis-src-icon'),
+            vSrcName: document.getElementById('vis-src-name'),
+            vSrcDesc: document.getElementById('vis-src-desc'),
+            vSrcPort: document.getElementById('vis-src-port'),
+            
+            vDstBox: document.getElementById('vis-dst-box'),
+            vDstIcon: document.getElementById('vis-dst-icon'),
+            vDstName: document.getElementById('vis-dst-name'),
+            vDstDesc: document.getElementById('vis-dst-desc'),
+            vDstPort: document.getElementById('vis-dst-port'),
+            
+            vCableBg: document.getElementById('vis-cable-bg'),
+            vCableSolid: document.getElementById('vis-cable-solid'),
+            vCableLabel: document.getElementById('vis-cable-label'),
+            animContainer: document.getElementById('anim-container'),
+
+            // CLI
+            cliOut: document.getElementById('cli-output'),
+            cliIn: document.getElementById('cli-input'),
+            cliPrompt: document.getElementById('cli-prompt')
+        };
+
+        // --- INIT ---
+        function init() {
+            renderList(sources, UI.srcContainer, 'src');
+            renderList(cables, UI.cabContainer, 'cab');
+            renderList(destinations, UI.dstContainer, 'dst');
+
+            UI.distInput.addEventListener('input', (e) => {
+                state.dist = parseInt(e.target.value);
+                UI.distVal.innerText = state.dist + 'm';
+                updateVisualizer();
+            });
+
+            // CLI Input Event
+            UI.cliIn.addEventListener('keypress', function (e) {
+                if (e.key === 'Enter') {
+                    handleManualCommand(this.value);
+                    this.value = '';
+                }
+            });
+        }
+
+        // --- RENDER BOARDS ---
+        function renderList(data, container, stateKey) {
+            container.innerHTML = '';
+            data.forEach(item => {
+                const isSel = state[stateKey] && state[stateKey].id === item.id;
+                const div = document.createElement('div');
+                div.className = `device-card border p-2 rounded-lg flex items-center gap-3 bg-white ${isSel ? 'selected' : 'border-gray-200'}`;
+                div.onclick = () => selectItem(stateKey, item);
+                
+                div.innerHTML = `
+                    <div class="w-10 h-10 shrink-0 rounded flex items-center justify-center text-xl ${isSel ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-500'}">
+                        <i class="fa-solid ${item.icon}"></i>
+                    </div>
+                    <div class="flex-grow">
+                        <div class="font-bold text-sm text-gray-800">${item.name}</div>
+                        <div class="text-[10px] text-gray-500 line-clamp-1">${item.desc}</div>
+                    </div>
+                    ${item.port ? `<div class="shrink-0 text-[10px] font-mono px-1.5 py-0.5 rounded bg-gray-100 border border-gray-300">${item.port}</div>` : ''}
+                    ${item.type ? `<div class="shrink-0 text-[10px] font-mono px-1.5 py-0.5 rounded bg-gray-100 border border-gray-300">${item.type}</div>` : ''}
+                `;
+                container.appendChild(div);
+            });
+        }
+
+        function selectItem(key, item) {
+            state[key] = item;
+            
+            // Auto update CLI prompt based on source
+            if (key === 'src') {
+                UI.cliPrompt.innerText = item.prompt + '>';
+            }
+
+            // Reset connection state if changing topology
+            state.connected = false;
+            UI.animContainer.innerHTML = '';
+            UI.vCableSolid.style.width = '0%';
+            
+            renderList(sources, UI.srcContainer, 'src');
+            renderList(cables, UI.cabContainer, 'cab');
+            renderList(destinations, UI.dstContainer, 'dst');
+            updateVisualizer();
+        }
+
+        function updateVisualizer() {
+            // Source
+            if (state.src) {
+                UI.vSrcIcon.className = `fa-solid ${state.src.icon} text-4xl text-blue-600`;
+                UI.vSrcBox.className = `w-24 h-24 bg-blue-50 rounded-2xl shadow border-4 ${state.src.color} flex flex-col items-center justify-center transition-all`;
+                UI.vSrcName.innerText = state.src.name;
+                UI.vSrcDesc.innerText = `Port: ${state.src.port}`;
+                UI.vSrcPort.innerText = state.src.port;
+                UI.vSrcPort.className = "absolute -right-3 top-1/2 -translate-y-1/2 px-1 h-6 bg-blue-100 border-2 border-blue-400 flex items-center justify-center text-[9px] font-bold text-blue-700 rounded-sm";
+            }
+
+            // Dest
+            if (state.dst) {
+                UI.vDstIcon.className = `fa-solid ${state.dst.icon} text-4xl text-green-600`;
+                UI.vDstBox.className = `w-24 h-24 bg-green-50 rounded-2xl shadow border-4 border-green-500 flex flex-col items-center justify-center transition-all`;
+                UI.vDstName.innerText = state.dst.name;
+                UI.vDstDesc.innerText = state.dst.needPoE ? `Port: ${state.dst.port} (Cần PoE)` : `Port: ${state.dst.port}`;
+                UI.vDstPort.innerText = state.dst.port;
+                UI.vDstPort.className = "absolute -left-3 top-1/2 -translate-y-1/2 px-1 h-6 bg-green-100 border-2 border-green-500 flex items-center justify-center text-[9px] font-bold text-green-700 rounded-sm";
+            }
+
+            // Cable
+            if (state.cab) {
+                UI.vCableLabel.innerHTML = `<i class="fa-solid ${state.cab.icon} mr-1"></i> ${state.cab.name} (${state.dist}m)`;
+                UI.vCableSolid.className = `absolute w-0 h-2 top-1/2 -translate-y-1/2 transition-all duration-700 left-0 ${state.cab.bgClass}`;
+            } else {
+                UI.vCableLabel.innerText = `Khoảng cách: ${state.dist}m`;
+                UI.vCableSolid.style.width = '0%';
+            }
+        }
+
+        // --- CLI ENGINE ---
+        function writeCLI(text, type = 'normal') {
+            const div = document.createElement('div');
+            
+            // Format colors based on cisco logs
+            if (type === 'cmd') div.innerHTML = `<span class="font-bold text-white">${text}</span>`;
+            else if (type === 'error') div.className = 'text-red-400 font-bold';
+            else if (type === 'syslog') div.className = 'text-yellow-400';
+            else if (type === 'success') div.className = 'text-green-300';
+            else div.className = 'text-gray-300';
+            
+            if(type !== 'cmd') {
+                div.innerText = text;
+            }
+
+            UI.cliOut.appendChild(div);
+            UI.cliOut.scrollTop = UI.cliOut.scrollHeight;
+        }
+
+        function clearCLI() {
+            UI.cliOut.innerHTML = '';
+        }
+
+        function handleManualCommand(cmd) {
+            cmd = cmd.trim();
+            if (!cmd) return;
+            
+            const prompt = UI.cliPrompt.innerText;
+            writeCLI(`${prompt} ${cmd}`, 'cmd');
+
+            const lcmd = cmd.toLowerCase();
+            if (lcmd === 'enable' || lcmd === 'en') {
+                UI.cliPrompt.innerText = UI.cliPrompt.innerText.replace('>', '#');
+            } else if (lcmd === 'disable' || lcmd === 'exit') {
+                UI.cliPrompt.innerText = UI.cliPrompt.innerText.replace('#', '>');
+            } else if (lcmd.startsWith('ping')) {
+                if(!state.connected) {
+                    writeCLI('.....', 'normal');
+                    writeCLI('Success rate is 0 percent (0/5)', 'normal');
+                } else {
+                    writeCLI('!!!!!', 'success');
+                    writeCLI('Success rate is 100 percent (5/5)', 'normal');
+                }
+            } else if (lcmd.includes('show ip int brief')) {
+                let status = state.connected ? 'up' : 'down';
+                writeCLI(`Interface              IP-Address      OK? Method Status                Protocol\nGigabitEthernet0/1     unassigned      YES unset  ${status.padEnd(21)} ${status}`, 'normal');
+            } else {
+                writeCLI(`% Invalid input detected at '^' marker.`, 'error');
+            }
+        }
+
+        // --- SIMULATION LOGIC ---
+        function executeConnection() {
+            if (!state.src || !state.cab || !state.dst) {
+                alert("Vui lòng chọn đầy đủ Thiết bị nguồn, Loại cáp và Thiết bị đích!");
+                return;
+            }
+
+            const s = state.src;
+            const c = state.cab;
+            const d = state.dst;
+            const dist = state.dist;
+            const prmt = s.prompt;
+
+            // Clear previous animation
+            UI.animContainer.innerHTML = '';
+            UI.vCableSolid.style.width = '100%'; // Connect physical cable
+            
+            // 1. Generate CLI for Physical connection
+            writeCLI(`${prmt}# configure terminal`, 'cmd');
+            writeCLI(`Enter configuration commands, one per line. End with CNTL/Z.`, 'normal');
+            const intf = c.type === 'SFP' ? 'TenGigabitEthernet1/1' : 'GigabitEthernet0/1';
+            writeCLI(`${prmt}(config)# interface ${intf}`, 'cmd');
+            writeCLI(`${prmt}(config-if)# media-type ${c.type.toLowerCase()}`, 'cmd');
+            
+            if (d.needPoE) {
+                writeCLI(`${prmt}(config-if)# power inline auto`, 'cmd');
+            }
+            writeCLI(`${prmt}(config-if)# no shutdown`, 'cmd');
+
+            // Timeout to simulate processing
+            setTimeout(() => {
+                checkLogic(s, c, d, dist, intf);
+            }, 800);
+        }
+
+        function checkLogic(s, c, d, dist, intf) {
+            let hasError = false;
+
+            // Check 1: Source Port vs Cable
+            if (s.port !== c.type) {
+                writeCLI(`%ERROR: Hardware interface does not support requested media-type '${c.type}'.`, 'error');
+                writeCLI(`%SYSLOG-3-PHYSICAL_MISMATCH: Transceiver module incompatible on ${intf}.`, 'syslog');
+                triggerAnimError("Cáp và Cổng Nguồn không khớp!");
+                hasError = true;
+            }
+
+            // Check 2: Dest Port vs Cable
+            if (!hasError && d.port !== c.type) {
+                writeCLI(`%LINK-3-UPDOWN: Interface ${intf}, changed state to down`, 'syslog');
+                writeCLI(`%SYSLOG-3-DEST_MISMATCH: Cannot plug ${c.type} connector into ${d.port} destination port.`, 'error');
+                triggerAnimError("Cáp và Cổng Đích không khớp!");
+                hasError = true;
+            }
+
+            // Check 3: Distance Limitation
+            if (!hasError && dist > c.maxDist) {
+                writeCLI(`%LINK-3-UPDOWN: Interface ${intf}, changed state to down`, 'syslog');
+                writeCLI(`%CABLE-DIAG-FAIL: Signal attenuation detected. Distance ${dist}m exceeds ${c.maxDist}m limit for ${c.name}.`, 'error');
+                triggerAnimError("Khoảng cách quá xa (Suy hao)!");
+                hasError = true;
+            }
+
+            // Check 4: PoE Requirements
+            if (!hasError && d.needPoE) {
+                if (!s.hasPoE) {
+                    writeCLI(`%ILPOWER-3-CONTROLLER_ERR: Inline power feature not supported on this hardware.`, 'error');
+                    writeCLI(`%LINK-3-UPDOWN: Interface ${intf}, changed state to down (Device unpowered)`, 'syslog');
+                    triggerAnimError("Nguồn không hỗ trợ cấp điện PoE!");
+                    hasError = true;
+                } else if (!c.poe) {
+                    writeCLI(`%ILPOWER-3-MEDIA_ERR: Power cannot be transmitted over fiber optic media.`, 'error');
+                    triggerAnimError("Cáp quang không truyền được điện!");
+                    hasError = true;
+                }
+            }
+
+            // SUCCESS PATH
+            if (!hasError) {
+                if(d.needPoE) {
+                    writeCLI(`%ILPOWER-5-POWER_GRANTED: Interface ${intf}: Power granted`, 'success');
+                }
+                writeCLI(`%LINK-3-UPDOWN: Interface ${intf}, changed state to up`, 'success');
+                writeCLI(`%LINEPROTO-5-UPDOWN: Line protocol on Interface ${intf}, changed state to up`, 'success');
+                triggerAnimSuccess();
+                state.connected = true;
+                
+                // Add highlight pulse
+                UI.vSrcPort.classList.add('port-highlight');
+                UI.vDstPort.classList.add('port-highlight');
+            } else {
+                state.connected = false;
+                UI.vCableSolid.style.width = '0%'; // disconnect
+                UI.vSrcPort.classList.remove('port-highlight');
+                UI.vDstPort.classList.remove('port-highlight');
+            }
+        }
+
+        // --- ANIMATIONS ---
+        function triggerAnimSuccess() {
+            const dot = document.createElement('div');
+            dot.className = 'absolute w-4 h-4 bg-green-400 rounded-full shadow-[0_0_10px_#4ade80] anim-success z-20 top-1/2 -mt-2';
+            UI.animContainer.appendChild(dot);
+            
+            // Loop data flow
+            let flowInterval = setInterval(() => {
+                if(!state.connected) { clearInterval(flowInterval); return; }
+                const d = document.createElement('div');
+                d.className = 'absolute w-3 h-3 bg-blue-300 rounded-full shadow-[0_0_8px_#93c5fd] anim-success z-20 top-1/2 -mt-1.5 opacity-80';
+                UI.animContainer.appendChild(d);
+                setTimeout(() => { if(d.parentNode) d.remove() }, 2000);
+            }, 1000);
+        }
+
+        function triggerAnimError(reasonText) {
+            // Phong bì đỏ
+            const env = document.createElement('div');
+            env.className = 'absolute z-30 text-red-500 text-3xl drop-shadow-lg anim-error';
+            env.innerHTML = `<i class="fa-solid fa-envelope-open-text"></i>
+                             <div class="absolute w-max bg-red-600 text-white text-[10px] font-bold px-2 py-1 rounded shadow -bottom-6 left-1/2 -translate-x-1/2">${reasonText}</div>`;
+            UI.animContainer.appendChild(env);
+            
+            // Remove after animation
+            setTimeout(() => {
+                if(env.parentNode) env.remove();
+            }, 2500);
+        }
+
+        function resetSim() {
+            state = { src: null, cab: null, dst: null, dist: 50, connected: false };
+            UI.distInput.value = 50;
+            UI.distVal.innerText = '50m';
+            UI.vCableSolid.style.width = '0%';
+            UI.animContainer.innerHTML = '';
+            UI.vSrcPort.classList.remove('port-highlight');
+            UI.vDstPort.classList.remove('port-highlight');
+            
+            UI.vSrcBox.className = "w-24 h-24 bg-white rounded-2xl shadow-lg border-4 border-gray-200 flex flex-col items-center justify-center transition-all duration-300";
+            UI.vSrcIcon.className = "fa-solid fa-question text-4xl text-gray-300";
+            UI.vSrcName.innerText = "Thiết bị Nguồn";
+            UI.vSrcDesc.innerText = "Chưa cấu hình";
+            UI.vSrcPort.innerText = "P1";
+            UI.vSrcPort.className = "absolute -right-3 top-1/2 -translate-y-1/2 w-6 h-6 bg-gray-300 border-2 border-gray-400 flex items-center justify-center text-[8px] font-bold text-gray-600 rounded-sm";
+
+            UI.vDstBox.className = "w-24 h-24 bg-white rounded-2xl shadow-lg border-4 border-gray-200 flex flex-col items-center justify-center transition-all duration-300";
+            UI.vDstIcon.className = "fa-solid fa-question text-4xl text-gray-300";
+            UI.vDstName.innerText = "Thiết bị Đích";
+            UI.vDstDesc.innerText = "Chưa cấu hình";
+            UI.vDstPort.innerText = "P1";
+            UI.vDstPort.className = "absolute -left-3 top-1/2 -translate-y-1/2 w-6 h-6 bg-gray-300 border-2 border-gray-400 flex items-center justify-center text-[8px] font-bold text-gray-600 rounded-sm";
+
+            UI.cliPrompt.innerText = 'Switch>';
+            clearCLI();
+            writeCLI('Cisco IOS Software, C2960X Software (C2960X-UNIVERSALK9-M), Version 15.2(2)E\nCopyright (c) 1986-2023 by Cisco Systems, Inc.', 'normal');
+            writeCLI('Hệ thống đã được reset cấu hình về trạng thái ban đầu.', 'syslog');
+            init();
+        }
+
+        // Start
+        window.onload = init;
+
+    </script>
+</body>
+</html>

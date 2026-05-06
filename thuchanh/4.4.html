@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>THE BÁO: Cấu hình và giám sát thiết bị với SNMP, Syslog</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Font Awesome cho Icon -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        /* Tùy chỉnh thanh cuộn cho khu vực Topology */
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #f1f1f1; 
+            border-radius: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #cbd5e1; 
+            border-radius: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8; 
+        }
+
+        /* Animation cho các gói tin mô phỏng */
+        .packet {
+            position: absolute;
+            transition: all 1.5s linear;
+            z-index: 10;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+        .fade-out {
+            opacity: 0;
+            transform: scale(0.5);
+        }
+        .error-shake {
+            animation: shake 0.5s;
+        }
+        @keyframes shake {
+            0% { transform: translateX(0); }
+            25% { transform: translateX(-5px); }
+            50% { transform: translateX(5px); }
+            75% { transform: translateX(-5px); }
+            100% { transform: translateX(0); }
+        }
+    </style>
+</head>
+<body class="bg-slate-50 min-h-screen flex flex-col font-sans text-slate-800">
+
+    <!-- Header Sticky -->
+    <header class="sticky top-0 z-50 bg-blue-800 text-white shadow-lg border-b-4 border-yellow-400">
+        <div class="max-w-7xl mx-auto px-4 py-3 flex justify-between items-center">
+            <h1 class="text-lg md:text-xl font-bold uppercase tracking-wide">
+                <i class="fa-solid fa-network-wired mr-2"></i> THE BÁO: Cấu hình và giám sát thiết bị với SNMP, Syslog
+            </h1>
+            <button id="btn-reset-top" class="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded text-sm font-semibold transition-colors">
+                <i class="fa-solid fa-rotate-right mr-1"></i> Reset Toàn Bộ
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="flex-grow w-full max-w-7xl mx-auto px-4 py-6 flex flex-col gap-6">
+
+        <!-- Lời dẫn -->
+        <div class="bg-white p-4 rounded-lg shadow border-l-4 border-blue-500">
+            <p class="text-sm md:text-base">
+                <strong>Mục tiêu:</strong> Hiểu cơ chế hoạt động của <b>Syslog</b> (Gửi nhật ký hệ thống) và <b>SNMP</b> (Giám sát/Quản lý). <br>
+                <strong>Hướng dẫn:</strong> Sử dụng các nút bấm bên dưới hoặc gõ trực tiếp lệnh vào Console CLI. Quan sát sự di chuyển của các gói tin trên sơ đồ mạng và kết quả tại bảng điều khiển Server.
+            </p>
+        </div>
+
+        <!-- Sơ đồ mạng (Topology) -->
+        <div class="bg-white rounded-xl shadow-md border border-slate-200 overflow-hidden flex flex-col">
+            <div class="bg-slate-100 px-4 py-2 border-b border-slate-200 font-semibold flex justify-between">
+                <span><i class="fa-solid fa-sitemap text-blue-600 mr-2"></i>Sơ đồ mạng (Topology)</span>
+                <span class="text-xs text-slate-500 font-normal mt-1">Cuộn ngang/dọc nếu dùng màn hình nhỏ</span>
+            </div>
+            
+            <!-- Khu vực cuộn của Topology (50vh trên Mobile) -->
+            <div class="h-[50vh] md:h-[400px] overflow-auto custom-scrollbar relative" id="topology-container">
+                <!-- Canvas kích thước cố định để không bị móp méo -->
+                <div class="w-[800px] h-[380px] relative mx-auto" id="topology-canvas">
+                    
+                    <!-- Đường dây mạng -->
+                    <div class="absolute top-[180px] left-[150px] w-[500px] h-2 bg-green-500 rounded z-0" id="network-cable"></div>
+
+                    <!-- Thiết bị: Router (Trái) -->
+                    <div class="absolute top-[120px] left-[50px] flex flex-col items-center z-10" id="node-router">
+                        <div class="w-24 h-24 bg-blue-600 rounded-full flex items-center justify-center border-4 border-white shadow-lg text-white text-4xl relative">
+                            <i class="fa-solid fa-server"></i>
+                            <div class="absolute -bottom-2 -right-2 w-6 h-6 bg-green-500 rounded-full border-2 border-white blink" id="router-status"></div>
+                        </div>
+                        <span class="mt-2 font-bold text-lg bg-white px-2 py-1 rounded shadow-sm">Router R1</span>
+                        <span class="text-sm text-slate-500">192.168.1.1</span>
+                    </div>
+
+                    <!-- Thiết bị: Server (Phải) -->
+                    <div class="absolute top-[120px] left-[650px] flex flex-col items-center z-10" id="node-server">
+                        <div class="w-24 h-28 bg-slate-700 rounded flex flex-col justify-evenly items-center border-4 border-white shadow-lg text-white relative">
+                            <div class="w-16 h-4 bg-slate-500 rounded"></div>
+                            <div class="w-16 h-4 bg-slate-500 rounded"></div>
+                            <div class="w-16 h-4 bg-slate-500 rounded"></div>
+                        </div>
+                        <span class="mt-2 font-bold text-lg bg-white px-2 py-1 rounded shadow-sm">Server S1</span>
+                        <span class="text-sm text-slate-500">192.168.1.100</span>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <!-- Bảng Điều Khiển (Control Panel) -->
+            <div class="bg-white rounded-xl shadow-md border border-slate-200 flex flex-col">
+                <div class="bg-slate-100 px-4 py-2 border-b border-slate-200 font-semibold">
+                    <i class="fa-solid fa-gamepad text-blue-600 mr-2"></i>Bảng thao tác nhanh
+                </div>
+                <div class="p-4 flex-grow flex flex-col gap-4">
+                    
+                    <!-- Khối Syslog -->
+                    <div class="border rounded p-3 bg-blue-50">
+                        <h3 class="font-bold text-blue-800 mb-2 border-b border-blue-200 pb-1"><i class="fa-regular fa-envelope mr-1"></i> Cấu hình Syslog</h3>
+                        <div class="flex flex-wrap gap-2">
+                            <button onclick="executeAction('syslog-config')" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded text-sm transition shadow-sm">
+                                Bật gửi log tới Server
+                            </button>
+                            <button onclick="executeAction('syslog-remove')" class="bg-slate-500 hover:bg-slate-600 text-white px-3 py-1.5 rounded text-sm transition shadow-sm">
+                                Tắt gửi log
+                            </button>
+                        </div>
+                        <div class="mt-3 flex gap-2">
+                            <button onclick="simulateEvent('syslog-error')" class="bg-red-500 hover:bg-red-600 text-white px-3 py-1.5 rounded text-sm transition shadow-sm w-full">
+                                <i class="fa-solid fa-plug-circle-xmark mr-1"></i> Giả lập lỗi Cáp (Tạo Log)
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Khối SNMP -->
+                    <div class="border rounded p-3 bg-purple-50">
+                        <h3 class="font-bold text-purple-800 mb-2 border-b border-purple-200 pb-1"><i class="fa-solid fa-chart-line mr-1"></i> Cấu hình SNMP</h3>
+                        <div class="flex flex-wrap gap-2 mb-3">
+                            <button onclick="executeAction('snmp-ro')" class="bg-purple-600 hover:bg-purple-700 text-white px-3 py-1.5 rounded text-sm transition shadow-sm">
+                                Bật SNMP (Read-Only)
+                            </button>
+                            <button onclick="executeAction('snmp-trap')" class="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded text-sm transition shadow-sm">
+                                Cấu hình gửi Trap
+                            </button>
+                        </div>
+                        <div class="flex flex-col gap-2 border-t border-purple-200 pt-2">
+                            <p class="text-xs text-purple-700 font-semibold mb-1">Hành động từ phía Server S1:</p>
+                            <div class="flex gap-2">
+                                <button onclick="simulateEvent('snmp-poll')" class="bg-teal-500 hover:bg-teal-600 text-white px-3 py-1.5 rounded text-sm transition shadow-sm flex-1">
+                                    <i class="fa-solid fa-magnifying-glass mr-1"></i> NMS Poll dữ liệu
+                                </button>
+                                <button onclick="simulateEvent('snmp-trigger-trap')" class="bg-orange-500 hover:bg-orange-600 text-white px-3 py-1.5 rounded text-sm transition shadow-sm flex-1">
+                                    <i class="fa-solid fa-bolt mr-1"></i> Ép CPU cao (Kích Trap)
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+
+            <!-- Dashboard Server S1 -->
+            <div class="bg-white rounded-xl shadow-md border border-slate-200 flex flex-col">
+                <div class="bg-slate-800 px-4 py-2 border-b border-slate-700 font-semibold text-white">
+                    <i class="fa-solid fa-desktop mr-2"></i>Màn hình Server S1 (NMS / Syslog Server)
+                </div>
+                <div class="p-0 flex-grow grid grid-rows-2">
+                    <!-- Syslog Viewer -->
+                    <div class="border-b border-slate-200 p-2 flex flex-col bg-slate-50">
+                        <div class="text-xs font-bold text-slate-500 mb-1 uppercase">Syslog Messages Received</div>
+                        <div id="server-syslog-display" class="flex-grow bg-white border rounded p-2 text-xs font-mono overflow-y-auto max-h-[150px]">
+                            <div class="text-slate-400 italic">Chưa nhận được log nào...</div>
+                        </div>
+                    </div>
+                    <!-- SNMP Viewer -->
+                    <div class="p-2 flex flex-col bg-slate-50">
+                        <div class="text-xs font-bold text-slate-500 mb-1 uppercase">SNMP Manager (NMS)</div>
+                        <div id="server-snmp-display" class="flex-grow bg-white border rounded p-2 text-xs font-mono overflow-y-auto max-h-[150px]">
+                            <div class="text-slate-400 italic">Chưa có dữ liệu SNMP...</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Console CLI -->
+        <div class="bg-[#1e1e1e] rounded-xl shadow-lg border border-slate-700 overflow-hidden flex flex-col">
+            <div class="bg-slate-300 px-4 py-1.5 flex justify-between items-center text-sm font-semibold">
+                <span><i class="fa-solid fa-terminal mr-2"></i>Router R1 CLI</span>
+                <span class="text-slate-500 font-normal text-xs">Gõ lệnh hoặc dùng nút bấm phía trên</span>
+            </div>
+            <!-- Màn hình Console -->
+            <div class="p-4 font-mono text-sm text-green-400 h-[250px] overflow-y-auto flex flex-col" id="cli-output" onclick="document.getElementById('cli-input').focus()">
+                <div class="text-slate-400 mb-2">
+                    Cisco IOS Software, C2900 Software (C2900-UNIVERSALK9-M)<br>
+                    Nhập '?' để xem gợi ý các lệnh mô phỏng.
+                </div>
+                <div id="cli-history"></div>
+                <!-- Input Line -->
+                <div class="flex mt-1">
+                    <span id="cli-prompt" class="mr-2">Router(config)#</span>
+                    <input type="text" id="cli-input" class="bg-transparent border-none outline-none text-white flex-grow font-mono" autocomplete="off" spellcheck="false">
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="bg-black text-slate-300 py-4 mt-auto border-t border-slate-800">
+        <div class="max-w-7xl mx-auto px-4 text-center text-sm">
+            <p>Bằng chứng kéo chạm đáy trang web - Không khóa tràn màn hình (Overflow).</p>
+            <p class="mt-1 font-semibold text-white">Thiết kế bởi <span class="text-yellow-400 tracking-wider">THE BÁO</span> &copy; 2026</p>
+        </div>
+    </footer>
+
+    <!-- Logic JavaScript -->
+    <script>
+        // --- TRẠNG THÁI HỆ THỐNG MÔ PHỎNG ---
+        const state = {
+            syslogServer: null,    // Lưu IP của Syslog server nếu đã cấu hình
+            snmpRO: false,         // Trạng thái cấu hình SNMP community public RO
+            snmpTrapTarget: null,  // IP nhận SNMP Traps
+            interfaceUp: true      // Trạng thái mạng (để sinh lỗi)
+        };
+
+        // --- CÁC DOM ELEMENTS ---
+        const cliOutput = document.getElementById('cli-history');
+        const cliInput = document.getElementById('cli-input');
+        const canvas = document.getElementById('topology-canvas');
+        const syslogDisplay = document.getElementById('server-syslog-display');
+        const snmpDisplay = document.getElementById('server-snmp-display');
+
+        // Khởi tạo scroll CLI xuống dưới cùng
+        const scrollToBottom = () => {
+            const container = document.getElementById('cli-output');
+            container.scrollTop = container.scrollHeight;
+        };
+
+        // --- HÀM IN RA CONSOLE ---
+        function printConsole(text, type = 'normal') {
+            const div = document.createElement('div');
+            if (type === 'cmd') {
+                div.innerHTML = `<span class="text-white">${text}</span>`;
+            } else if (type === 'error') {
+                div.className = "text-red-400 mt-1 mb-1";
+                div.innerText = text;
+            } else if (type === 'syslog') {
+                div.className = "text-blue-300 mt-1 mb-1 font-bold";
+                div.innerText = text;
+            } else {
+                div.innerText = text;
+            }
+            cliOutput.appendChild(div);
+            scrollToBottom();
+        }
+
+        function printServer(board, text, type) {
+            const target = board === 'syslog' ? syslogDisplay : snmpDisplay;
+            
+            // Xóa chữ "Chưa nhận được..."
+            if(target.innerHTML.includes('Chưa')) target.innerHTML = '';
+
+            const div = document.createElement('div');
+            div.className = `mb-1 pb-1 border-b border-slate-100 ${type === 'error' ? 'text-red-600' : 'text-slate-800'}`;
+            
+            const time = new Date().toLocaleTimeString();
+            div.innerHTML = `<span class="text-slate-400 text-[10px]">[${time}]</span> ${text}`;
+            
+            target.appendChild(div);
+            target.scrollTop = target.scrollHeight;
+        }
+
+        // --- HỆ THỐNG ANIMATION GÓI TIN ---
+        function createPacket(iconClass, colorClass, startEl, endEl, callback, isDrop = false) {
+            const packet = document.createElement('div');
+            packet.className = `packet ${colorClass}`;
+            packet.innerHTML = `<i class="${iconClass}"></i>`;
+            
+            // Lấy tọa độ tương đối so với Canvas
+            const startRect = document.getElementById(startEl).getBoundingClientRect();
+            const endRect = document.getElementById(endEl).getBoundingClientRect();
+            const canvasRect = canvas.getBoundingClientRect();
+
+            const startX = startRect.left - canvasRect.left + (startRect.width / 2) - 15;
+            const startY = startRect.top - canvasRect.top + (startRect.height / 2) - 15;
+            
+            let endX = endRect.left - canvasRect.left + (endRect.width / 2) - 15;
+            let endY = endRect.top - canvasRect.top + (endRect.height / 2) - 15;
+
+            // Nếu là gói tin rớt, nó sẽ rơi giữa chừng
+            if(isDrop) {
+                endX = startX + (endX - startX) / 2;
+                endY = startY + (endY - startY) / 2 + 50; // Rơi xuống dưới
+            }
+
+            packet.style.left = `${startX}px`;
+            packet.style.top = `${startY}px`;
+
+            canvas.appendChild(packet);
+
+            // Kích hoạt animation bằng cách đổi CSS
+            setTimeout(() => {
+                packet.style.left = `${endX}px`;
+                packet.style.top = `${endY}px`;
+                if(isDrop) {
+                    packet.style.opacity = '0';
+                    packet.style.transform = 'scale(0.5) rotate(90deg)';
+                }
+            }, 50);
+
+            // Dọn dẹp sau khi chạy xong
+            setTimeout(() => {
+                packet.remove();
+                if(callback) callback();
+            }, 1500);
+        }
+
+        // Hiển thị Icon Lỗi chữ X đỏ tại chỗ
+        function showDropEffect(elId) {
+            const target = document.getElementById(elId);
+            target.classList.add('error-shake');
+            
+            const errorIcon = document.createElement('div');
+            errorIcon.className = 'absolute -top-4 -right-4 text-red-500 text-3xl font-bold z-50';
+            errorIcon.innerHTML = '<i class="fa-solid fa-circle-xmark"></i>';
+            target.appendChild(errorIcon);
+
+            setTimeout(() => {
+                target.classList.remove('error-shake');
+                errorIcon.remove();
+            }, 1000);
+        }
+
+        // --- XỬ LÝ LOGIC NÚT BẤM & LỆNH ---
+        function executeCommand(cmdStr) {
+            const cmd = cmdStr.trim().toLowerCase();
+            if (!cmd) return;
+            
+            printConsole(`Router(config)# ${cmdStr}`, 'cmd');
+
+            // Xử lý logic câu lệnh
+            if (cmd === '?') {
+                printConsole("Các lệnh hỗ trợ:\n- logging host 192.168.1.100\n- no logging host\n- snmp-server community public ro\n- snmp-server host 192.168.1.100 traps\n- int g0/0 shut / no shut", "normal");
+            } 
+            else if (cmd.includes("logging host 192.168.1.100")) {
+                state.syslogServer = '192.168.1.100';
+                printConsole("Hệ thống: Đã kích hoạt gửi Syslog đến 192.168.1.100", "syslog");
+            }
+            else if (cmd.includes("no logging host")) {
+                state.syslogServer = null;
+                printConsole("Hệ thống: Đã tắt gửi Syslog", "syslog");
+            }
+            else if (cmd.includes("snmp-server community public ro")) {
+                state.snmpRO = true;
+                printConsole("Hệ thống: Đã tạo SNMP Community 'public' (Read-Only)", "syslog");
+            }
+            else if (cmd.includes("snmp-server host 192.168.1.100 trap")) {
+                state.snmpTrapTarget = '192.168.1.100';
+                printConsole("Hệ thống: Cấu hình gửi SNMP Trap tới 192.168.1.100", "syslog");
+            }
+            else if (cmd.includes("shut")) {
+                simulateEvent('syslog-error'); // Giả lập mất mạng
+            }
+            else {
+                printConsole(`% Invalid input detected at '^' marker.`, "error");
+            }
+        }
+
+        // Nối nút bấm với lệnh
+        function executeAction(actionType) {
+            switch(actionType) {
+                case 'syslog-config':
+                    executeCommand("logging host 192.168.1.100");
+                    break;
+                case 'syslog-remove':
+                    executeCommand("no logging host");
+                    break;
+                case 'snmp-ro':
+                    executeCommand("snmp-server community public ro");
+                    break;
+                case 'snmp-trap':
+                    executeCommand("snmp-server host 192.168.1.100 traps public");
+                    break;
+            }
+        }
+
+        // Xử lý giả lập sự kiện (Tạo Log, Poll SNMP)
+        function simulateEvent(eventType) {
+            if (eventType === 'syslog-error') {
+                const logMsg = "%LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to down";
+                printConsole(logMsg, "syslog");
+                document.getElementById('network-cable').classList.replace('bg-green-500', 'bg-red-500');
+
+                // Hậu quả: Nếu chưa cấu hình syslog -> rớt gói tin
+                if (!state.syslogServer) {
+                    printConsole("% Cảnh báo: Syslog sinh ra nhưng chưa cấu hình Server IP. Gói tin bị drop nội bộ.", "error");
+                    createPacket('fa-solid fa-envelope', 'text-red-500', 'node-router', 'node-server', null, true); // Drop midway
+                } else {
+                    // Chuyển động gửi thư
+                    createPacket('fa-solid fa-envelope', 'text-red-500', 'node-router', 'node-server', () => {
+                        printServer('syslog', `<span class="text-red-600 font-bold">[CRITICAL]</span> R1: ${logMsg}`, 'error');
+                    });
+                }
+                
+                // Auto no shut sau 3 giây
+                setTimeout(() => {
+                    const logUp = "%LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up";
+                    printConsole(logUp, "syslog");
+                    document.getElementById('network-cable').classList.replace('bg-red-500', 'bg-green-500');
+                    if (state.syslogServer) {
+                        createPacket('fa-solid fa-envelope', 'text-green-500', 'node-router', 'node-server', () => {
+                            printServer('syslog', `<span class="text-green-600 font-bold">[INFO]</span> R1: ${logUp}`);
+                        });
+                    }
+                }, 3000);
+            }
+            
+            else if (eventType === 'snmp-poll') {
+                // S1 gửi truy vấn tới R1
+                createPacket('fa-solid fa-magnifying-glass', 'text-teal-600', 'node-server', 'node-router', () => {
+                    // Hậu quả nếu Router chưa cấu hình SNMP
+                    if (!state.snmpRO) {
+                        printConsole("SNMP: Truy vấn từ 192.168.1.100 bị TỪ CHỐI (Wrong Community).", "error");
+                        showDropEffect('node-router');
+                        printServer('snmp', 'Timeout: No Response from 192.168.1.1', 'error');
+                    } else {
+                        // Trả kết quả về
+                        createPacket('fa-solid fa-chart-bar', 'text-teal-500', 'node-router', 'node-server', () => {
+                            printServer('snmp', 'R1 Reply: CPU 12%, RAM 45%, Uptime 12:45:00');
+                        });
+                    }
+                });
+            }
+
+            else if (eventType === 'snmp-trigger-trap') {
+                printConsole("SNMP: CPU Usage spiked to 99%", "syslog");
+                if (!state.snmpTrapTarget) {
+                    printConsole("% Cảnh báo: Sinh Trap nhưng chưa cấu hình Trap Receiver.", "error");
+                    createPacket('fa-solid fa-bolt', 'text-orange-500', 'node-router', 'node-server', null, true); // Drop
+                } else {
+                    createPacket('fa-solid fa-bolt', 'text-orange-500', 'node-router', 'node-server', () => {
+                        printServer('snmp', '<span class="text-orange-600 font-bold">[TRAP RECEIVED]</span> R1: CPU Threshold Exceeded (99%)', 'error');
+                    });
+                }
+            }
+        }
+
+        // --- XỬ LÝ SỰ KIỆN GÕ BÀN PHÍM ---
+        cliInput.addEventListener('keypress', function (e) {
+            if (e.key === 'Enter') {
+                const val = this.value;
+                this.value = '';
+                executeCommand(val);
+            }
+        });
+
+        // --- RESET TOÀN BỘ ---
+        document.getElementById('btn-reset-top').addEventListener('click', () => {
+            // Reset logic state
+            state.syslogServer = null;
+            state.snmpRO = false;
+            state.snmpTrapTarget = null;
+            
+            // Reset UI
+            cliOutput.innerHTML = `<div class="text-slate-400 mb-2">Cisco IOS Software, C2900 Software<br>Hệ thống đã được RESET về trạng thái ban đầu.</div>`;
+            syslogDisplay.innerHTML = `<div class="text-slate-400 italic">Chưa nhận được log nào...</div>`;
+            snmpDisplay.innerHTML = `<div class="text-slate-400 italic">Chưa có dữ liệu SNMP...</div>`;
+            document.getElementById('network-cable').classList.remove('bg-red-500');
+            document.getElementById('network-cable').classList.add('bg-green-500');
+            
+            // Focus lại CLI
+            cliInput.focus();
+        });
+
+    </script>
+</body>
+</html>

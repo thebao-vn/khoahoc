@@ -1,0 +1,627 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>THE BÁO: Vai trò của DHCP và DNS</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        /* 1. LAYOUT TỔNG THỂ CƠ CHẾ CUỘN (LƯỚT TỰ DO) */
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f8fafc; /* slate-50 */
+            margin: 0;
+            padding: 0;
+            min-height: 100vh; /* Không khóa màn hình, có thể giãn ra vô tận */
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* HEADER STICKY */
+        header {
+            position: sticky;
+            top: 0;
+            z-index: 50;
+            backdrop-filter: blur(8px);
+        }
+
+        /* 2. SƠ ĐỒ MẠNG (TOPOLOGY) */
+        #topology-wrapper {
+            position: relative;
+            background-color: #e2e8f0; /* slate-200 */
+            background-image: 
+                linear-gradient(#cbd5e1 1px, transparent 1px),
+                linear-gradient(90deg, #cbd5e1 1px, transparent 1px);
+            background-size: 25px 25px;
+            overflow: auto; /* Hỗ trợ cuộn/vuốt ngang dọc nội bộ */
+            border-radius: 0.5rem;
+            box-shadow: inset 0 2px 10px rgba(0, 0, 0, 0.1);
+            -ms-overflow-style: none; scrollbar-width: none; /* Ẩn scrollbar trên Firefox/IE */
+        }
+        #topology-wrapper::-webkit-scrollbar { display: none; } /* Ẩn scrollbar trên Chrome/Safari */
+
+        /* Kích thước Responsive cho khung Sơ đồ */
+        @media (max-width: 1024px) {
+            #topology-wrapper { height: 50vh; }
+        }
+        @media (min-width: 1025px) {
+            #topology-wrapper { height: 550px; }
+        }
+
+        /* Bản vẽ gốc cố định kích thước chống móp méo */
+        #topology-canvas {
+            width: 950px;
+            height: 550px;
+            position: relative;
+        }
+
+        /* CÁC THIẾT BỊ (NODES) */
+        .node {
+            position: absolute;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            width: 110px; height: 110px;
+            background: white; border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            border: 2px solid #3b82f6; /* blue-500 */
+            transition: all 0.3s ease; z-index: 10;
+        }
+        .node.offline { border-color: #ef4444; background: #fef2f2; opacity: 0.7; }
+        .node-icon { font-size: 2.5rem; color: #1e293b; margin-bottom: 5px; }
+        .node-label { font-weight: 700; font-size: 0.8rem; color: #334155; }
+        
+        .ip-badge {
+            margin-top: 5px; font-family: 'Courier New', Courier, monospace; font-size: 0.7rem; font-weight: bold;
+            padding: 2px 6px; border-radius: 4px; border: 1px solid #cbd5e1; background: #f1f5f9; color: #475569;
+        }
+        .ip-badge.success { background: #dcfce7; color: #166534; border-color: #86efac; }
+        .ip-badge.error { background: #fee2e2; color: #991b1b; border-color: #fca5a5; }
+
+        /* ĐƯỜNG CÁP & GÓI TIN */
+        #svg-lines { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; pointer-events: none; }
+        .cable { stroke: #94a3b8; stroke-width: 4; stroke-dasharray: 6, 6; }
+
+        .packet {
+            position: absolute; width: 24px; height: 24px; border-radius: 50%; z-index: 5;
+            transform: translate(-50%, -50%); display: flex; align-items: center; justify-content: center;
+            font-size: 11px; font-weight: bold; color: white;
+            box-shadow: 0 0 12px rgba(0,0,0,0.5); transition: top 1s linear, left 1s linear;
+        }
+        /* Phân loại phong bì/gói tin */
+        .pkt-dhcp { background-color: #ef4444; box-shadow: 0 0 12px #ef4444; } /* Đỏ */
+        .pkt-dns { background-color: #3b82f6; box-shadow: 0 0 12px #3b82f6; }  /* Xanh dương */
+        .pkt-http { background-color: #f59e0b; box-shadow: 0 0 12px #f59e0b; } /* Vàng cam */
+
+        /* 3. BẢNG ĐIỀU KHIỂN & CONSOLE */
+        #cli-output {
+            font-family: 'Consolas', 'Courier New', monospace;
+            min-height: 250px;
+            overflow-y: auto;
+        }
+        
+        /* Toggle Switch CSS */
+        .toggle-checkbox:checked { right: 0; border-color: #22c55e; }
+        .toggle-checkbox:checked + .toggle-label { background-color: #22c55e; }
+    </style>
+</head>
+<body>
+
+    <!-- 1. HEADER (Sticky) -->
+    <header class="bg-slate-900 text-white p-4 shadow-lg border-b-4 border-blue-500">
+        <div class="max-w-7xl mx-auto flex justify-between items-center">
+            <div>
+                <h1 class="text-xl md:text-2xl font-black tracking-wide text-blue-400">
+                    THE BÁO: <span class="text-white font-bold">Phần 4.3 Vai trò của DHCP và DNS</span>
+                </h1>
+                <p class="text-xs md:text-sm text-slate-400 mt-1"><i class="fa-solid fa-scroll mr-1"></i>Web hỗ trợ lướt tự do & Sơ đồ vuốt ngang dọc.</p>
+            </div>
+            <button onclick="resetLab()" class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-md font-bold text-sm transition shadow-md flex items-center">
+                <i class="fa-solid fa-rotate-left mr-2"></i> Reset cấu hình
+            </button>
+        </div>
+    </header>
+
+    <!-- MAIN CONTENT -->
+    <main class="flex-grow p-4 lg:p-6 w-full max-w-7xl mx-auto flex flex-col lg:flex-row gap-6">
+        
+        <!-- CỘT TRÁI: SƠ ĐỒ MẠNG (TOPOLOGY) -->
+        <div class="w-full lg:w-3/5 flex flex-col gap-3">
+            
+            <div class="flex justify-between items-end">
+                <h2 class="font-bold text-lg text-slate-700 uppercase"><i class="fa-solid fa-sitemap mr-2"></i>Sơ đồ mô phỏng</h2>
+                <span class="text-xs text-slate-500 bg-slate-200 px-2 py-1 rounded-full"><i class="fa-solid fa-hand-pointer mr-1"></i>Vuốt trong khung để xem thiết bị</span>
+            </div>
+            
+            <!-- Khung chứa Topology -->
+            <div id="topology-wrapper" class="border border-slate-300 relative">
+                <!-- Hint cho Desktop -->
+                <div class="absolute top-2 right-2 text-[10px] text-slate-400 font-bold hidden lg:block pointer-events-none">Giữ chuột kéo để di chuyển</div>
+                
+                <div id="topology-canvas">
+                    <svg id="svg-lines"></svg>
+
+                    <!-- PC -->
+                    <div class="node" id="node-pc" style="left: 100px; top: 200px; border-color: #475569;">
+                        <i class="fa-solid fa-desktop node-icon"></i>
+                        <div class="node-label">Client PC</div>
+                        <div class="ip-badge" id="badge-pc-ip">No IP</div>
+                    </div>
+
+                    <!-- Switch Core -->
+                    <div class="node" id="node-switch" style="left: 400px; top: 200px; border-radius: 8px; border-color: #64748b;">
+                        <i class="fa-solid fa-server node-icon text-slate-600" style="transform: rotate(90deg);"></i>
+                        <div class="node-label">Switch L2</div>
+                        <div class="text-[10px] text-slate-500 font-bold mt-1">Trung tâm</div>
+                    </div>
+
+                    <!-- DHCP Server -->
+                    <div class="node" id="node-dhcp" style="left: 400px; top: 30px; border-color: #ef4444;">
+                        <i class="fa-solid fa-network-wired node-icon text-red-500"></i>
+                        <div class="node-label">DHCP Server</div>
+                        <div class="text-[10px] font-bold text-slate-600 mt-1">192.168.1.254</div>
+                    </div>
+
+                    <!-- DNS Server -->
+                    <div class="node" id="node-dns" style="left: 750px; top: 30px; border-color: #3b82f6;">
+                        <i class="fa-solid fa-address-book node-icon text-blue-500"></i>
+                        <div class="node-label">DNS Server</div>
+                        <div class="text-[10px] font-bold text-slate-600 mt-1">8.8.8.8</div>
+                    </div>
+
+                    <!-- Web Server -->
+                    <div class="node" id="node-web" style="left: 750px; top: 400px; border-color: #f59e0b;">
+                        <i class="fa-solid fa-globe node-icon text-amber-500"></i>
+                        <div class="node-label">Web Server</div>
+                        <div class="text-[10px] font-bold text-slate-600 mt-1">203.0.113.10</div>
+                        <div class="text-[10px] text-slate-500 font-mono">thebao.vn</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Bảng Server Controls (Trực quan hóa lỗi) -->
+            <div class="bg-white p-4 rounded-lg shadow-sm border border-slate-200 flex flex-col sm:flex-row gap-4 justify-between items-center">
+                <div>
+                    <h3 class="font-bold text-slate-700 text-sm"><i class="fa-solid fa-toggle-on text-slate-400 mr-2"></i>Quản lý Máy chủ (Servers)</h3>
+                    <p class="text-xs text-slate-500 mt-1">Hãy tắt thử máy chủ để xem HẬU QUẢ mạng bị lỗi ra sao.</p>
+                </div>
+                <div class="flex gap-6">
+                    <!-- DHCP Toggle -->
+                    <div class="flex items-center gap-2">
+                        <span class="text-xs font-bold text-red-600">DHCP</span>
+                        <div class="relative inline-block w-10 align-middle select-none">
+                            <input type="checkbox" id="toggle-dhcp" checked class="toggle-checkbox absolute block w-5 h-5 rounded-full bg-white border-4 appearance-none cursor-pointer transition-all duration-300"/>
+                            <label for="toggle-dhcp" class="toggle-label block overflow-hidden h-5 rounded-full bg-slate-300 cursor-pointer transition-colors duration-300"></label>
+                        </div>
+                    </div>
+                    <!-- DNS Toggle -->
+                    <div class="flex items-center gap-2">
+                        <span class="text-xs font-bold text-blue-600">DNS</span>
+                        <div class="relative inline-block w-10 align-middle select-none">
+                            <input type="checkbox" id="toggle-dns" checked class="toggle-checkbox absolute block w-5 h-5 rounded-full bg-white border-4 appearance-none cursor-pointer transition-all duration-300"/>
+                            <label for="toggle-dns" class="toggle-label block overflow-hidden h-5 rounded-full bg-slate-300 cursor-pointer transition-colors duration-300"></label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- CỘT PHẢI: BẢNG ĐIỀU KHIỂN & CLI CONSOLE -->
+        <div class="w-full lg:w-2/5 flex flex-col gap-4">
+            
+            <!-- Quick Actions Buttons -->
+            <div class="bg-white p-4 rounded-lg shadow-sm border border-blue-200 shrink-0">
+                <h3 class="font-bold text-blue-800 text-sm mb-3 uppercase"><i class="fa-solid fa-bolt mr-2 text-yellow-500"></i>Thao tác nhanh (Auto-CLI)</h3>
+                
+                <div class="space-y-3">
+                    <div class="bg-slate-50 p-2 border rounded">
+                        <p class="text-xs text-slate-500 mb-2 font-semibold">1. Xin cấp IP từ DHCP Server</p>
+                        <button onclick="guiLenhDHCP()" class="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded text-sm font-bold transition shadow">
+                            <i class="fa-solid fa-plug mr-1"></i> ipconfig /renew
+                        </button>
+                    </div>
+
+                    <div class="bg-slate-50 p-2 border rounded">
+                        <p class="text-xs text-slate-500 mb-2 font-semibold">2. Truy cập web cần phân giải DNS</p>
+                        <button onclick="guiLenhDNS()" class="w-full bg-amber-500 hover:bg-amber-600 text-white py-2 rounded text-sm font-bold transition shadow">
+                            <i class="fa-solid fa-magnifying-glass-globe mr-1"></i> ping www.thebao.vn
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Terminal / Console CLI -->
+            <div class="bg-slate-900 rounded-lg shadow-xl flex flex-col flex-grow border border-slate-700 h-full">
+                <!-- Header CLI -->
+                <div class="bg-slate-800 px-4 py-2 flex justify-between items-center rounded-t-lg shrink-0 border-b border-slate-700">
+                    <span class="font-bold text-xs text-slate-300 uppercase"><i class="fa-solid fa-terminal mr-2"></i>Command Prompt</span>
+                    <button onclick="xoaLog()" class="text-xs text-slate-500 hover:text-slate-300"><i class="fa-solid fa-trash mr-1"></i>Clear</button>
+                </div>
+                
+                <!-- Output CLI (Tự động dài ra theo nội dung) -->
+                <div id="cli-output" class="p-4 text-[13px] text-slate-300 flex-grow flex flex-col gap-1 leading-relaxed">
+                    <div class="text-green-400">Microsoft Windows [Version 10.0.19045]</div>
+                    <div class="text-slate-400">(c) Microsoft Corporation. All rights reserved.</div>
+                    <br>
+                    <div class="text-yellow-400">C:\Users\TheBao> echo Hệ thống đã sẵn sàng!</div>
+                    <div class="text-yellow-400">C:\Users\TheBao> Bạn có thể gõ lệnh thủ công ở dưới hoặc bấm nút thao tác nhanh.</div>
+                </div>
+
+                <!-- Input CLI (Nhập lệnh thủ công) -->
+                <div class="bg-slate-800 p-3 border-t border-slate-700 rounded-b-lg shrink-0">
+                    <form id="cli-form" class="flex items-center" onsubmit="xuLyGoLenh(event)">
+                        <span class="text-slate-400 font-bold mr-2 text-sm font-mono whitespace-nowrap">C:\Users\TheBao></span>
+                        <input type="text" id="cli-input" class="flex-1 bg-transparent text-white outline-none text-sm font-mono placeholder-slate-600" autocomplete="off" placeholder="ipconfig /renew HOẶC ping www.thebao.vn">
+                    </form>
+                </div>
+            </div>
+
+        </div>
+    </main>
+
+    <!-- FOOTER CHỨNG MINH CUỘN ĐƯỢC -->
+    <footer class="bg-black text-white text-center py-8 mt-auto border-t border-slate-800">
+        <h2 class="text-xl font-black text-slate-200 tracking-widest mb-2 uppercase">THE BÁO</h2>
+        <p class="text-sm text-slate-400"><i class="fa-solid fa-check-circle text-green-500 mr-2"></i>Chân trang Footer - Minh chứng Web có thể cuộn xuống tận đáy.</p>
+        <p class="text-xs mt-3 text-slate-600">© 2026 IP Services Simulation - Thiết kế bởi THE BÁO</p>
+    </footer>
+
+<script>
+    /* =========================================
+       1. TRẠNG THÁI HỆ THỐNG (STATE)
+    ========================================= */
+    const heThong = {
+        dhcpDangMo: true,
+        dnsDangMo: true,
+        pc: {
+            coMang: false,
+            ip: null,
+            dns: null
+        },
+        dangChayHieuUng: false
+    };
+
+    /* =========================================
+       2. VẼ ĐƯỜNG CÁP & KÉO THẢ SƠ ĐỒ (PAN)
+    ========================================= */
+    function veDuongCap() {
+        const svg = document.getElementById('svg-lines');
+        svg.innerHTML = ''; 
+        noiThietBi('node-pc', 'node-switch');
+        noiThietBi('node-switch', 'node-dhcp');
+        noiThietBi('node-switch', 'node-dns');
+        noiThietBi('node-switch', 'node-web');
+    }
+
+    function noiThietBi(id1, id2) {
+        const n1 = document.getElementById(id1);
+        const n2 = document.getElementById(id2);
+        const svg = document.getElementById('svg-lines');
+        
+        // 55 là nửa chiều rộng/cao của node (110px)
+        const x1 = parseInt(n1.style.left) + 55; 
+        const y1 = parseInt(n1.style.top) + 55;  
+        const x2 = parseInt(n2.style.left) + 55;
+        const y2 = parseInt(n2.style.top) + 55;
+
+        const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        line.setAttribute('x1', x1);
+        line.setAttribute('y1', y1);
+        line.setAttribute('x2', x2);
+        line.setAttribute('y2', y2);
+        line.setAttribute('class', 'cable');
+        svg.appendChild(line);
+    }
+
+    // Logic kéo thả Sơ đồ (Cho PC - Mobile tự có scroll overflow:auto)
+    const wrapper = document.getElementById('topology-wrapper');
+    let dangBamChuot = false, startX, startY, scrollL, scrollT;
+
+    wrapper.addEventListener('mousedown', (e) => {
+        dangBamChuot = true;
+        startX = e.pageX - wrapper.offsetLeft;
+        startY = e.pageY - wrapper.offsetTop;
+        scrollL = wrapper.scrollLeft;
+        scrollT = wrapper.scrollTop;
+    });
+    wrapper.addEventListener('mouseleave', () => dangBamChuot = false);
+    wrapper.addEventListener('mouseup', () => dangBamChuot = false);
+    wrapper.addEventListener('mousemove', (e) => {
+        if (!dangBamChuot) return;
+        e.preventDefault(); // Tránh bôi đen text khi kéo
+        const x = e.pageX - wrapper.offsetLeft;
+        const y = e.pageY - wrapper.offsetTop;
+        wrapper.scrollLeft = scrollL - (x - startX) * 1.5;
+        wrapper.scrollTop = scrollT - (y - startY) * 1.5;
+    });
+
+    // Lắng nghe nút gạt bật/tắt Server
+    document.getElementById('toggle-dhcp').addEventListener('change', (e) => {
+        heThong.dhcpDangMo = e.target.checked;
+        document.getElementById('node-dhcp').classList.toggle('offline', !heThong.dhcpDangMo);
+        inLog(``, '');
+        inLog(`C:\> net stop "DHCP Server"`, 'text-white font-bold');
+        if(!heThong.dhcpDangMo) inLog(`[Hệ thống] Máy chủ DHCP đã bị TẮT (Offline).`, 'text-red-500 font-bold');
+        else inLog(`[Hệ thống] Máy chủ DHCP đã BẬT (Online).`, 'text-green-400 font-bold');
+    });
+
+    document.getElementById('toggle-dns').addEventListener('change', (e) => {
+        heThong.dnsDangMo = e.target.checked;
+        document.getElementById('node-dns').classList.toggle('offline', !heThong.dnsDangMo);
+        inLog(``, '');
+        inLog(`C:\> net stop "DNS Server"`, 'text-white font-bold');
+        if(!heThong.dnsDangMo) inLog(`[Hệ thống] Máy chủ DNS đã bị TẮT (Offline).`, 'text-red-500 font-bold');
+        else inLog(`[Hệ thống] Máy chủ DNS đã BẬT (Online).`, 'text-green-400 font-bold');
+    });
+
+    /* =========================================
+       3. HỆ THỐNG GHI LOG (CLI CONSOLE)
+    ========================================= */
+    const logContainer = document.getElementById('cli-output');
+    
+    function inLog(text, colorClass = 'text-slate-300') {
+        const div = document.createElement('div');
+        div.className = colorClass;
+        // Escape HTML
+        div.innerText = text;
+        logContainer.appendChild(div);
+        logContainer.scrollTop = logContainer.scrollHeight; // Auto cuộn
+    }
+    
+    function xoaLog() {
+        logContainer.innerHTML = '';
+        inLog(`C:\Users\TheBao> cls`, 'text-white font-bold');
+    }
+
+    /* =========================================
+       4. ANIMATION & HIỆU ỨNG GÓI TIN
+    ========================================= */
+    function layToaDoTam(id) {
+        const el = document.getElementById(id);
+        return {
+            x: parseInt(el.style.left) + 55,
+            y: parseInt(el.style.top) + 55
+        };
+    }
+
+    function bayGoiTin(tuId, denId, cssClass, label) {
+        return new Promise(resolve => {
+            const start = layToaDoTam(tuId);
+            const end = layToaDoTam(denId);
+            const canvas = document.getElementById('topology-canvas');
+            
+            const pkt = document.createElement('div');
+            pkt.className = `packet ${cssClass}`;
+            pkt.innerText = label;
+            pkt.style.left = start.x + 'px';
+            pkt.style.top = start.y + 'px';
+            canvas.appendChild(pkt);
+
+            // Bắt buộc trình duyệt vẽ lại (Reflow) trước khi đổi tọa độ để CSS transition hoạt động
+            void pkt.offsetWidth;
+
+            pkt.style.left = end.x + 'px';
+            pkt.style.top = end.y + 'px';
+
+            setTimeout(() => {
+                pkt.remove();
+                resolve();
+            }, 1000); // Khớp với transition: 1s trong CSS
+        });
+    }
+
+    /* =========================================
+       5. NGHIỆP VỤ MÔ PHỎNG: DHCP & DNS
+    ========================================= */
+    
+    // Bắt sự kiện gõ phím ở ô Input
+    function xuLyGoLenh(e) {
+        e.preventDefault();
+        if (heThong.dangChayHieuUng) return;
+        
+        const inputEl = document.getElementById('cli-input');
+        const lenh = inputEl.value.trim().toLowerCase();
+        if (!lenh) return;
+
+        inLog(``, '');
+        inLog(`C:\\Users\\TheBao> ${lenh}`, 'text-white font-bold');
+        inputEl.value = '';
+
+        if (lenh === 'ipconfig /renew' || lenh === 'ipconfig/renew') {
+            thucThiDHCP(false); // Không in lại lệnh C:\>
+        } 
+        else if (lenh === 'ping www.thebao.vn' || lenh.startsWith('ping')) {
+            thucThiDNS(false);
+        }
+        else {
+            inLog(`'${lenh}' is not recognized as an internal or external command, operable program or batch file.`, 'text-slate-400');
+        }
+    }
+
+    // Hàm gọi từ nút bấm
+    function guiLenhDHCP() {
+        if (heThong.dangChayHieuUng) return;
+        inLog(``, '');
+        inLog(`C:\\Users\\TheBao> ipconfig /renew`, 'text-white font-bold');
+        thucThiDHCP(true);
+    }
+
+    function guiLenhDNS() {
+        if (heThong.dangChayHieuUng) return;
+        inLog(``, '');
+        inLog(`C:\\Users\\TheBao> ping www.thebao.vn`, 'text-white font-bold');
+        thucThiDNS(true);
+    }
+
+    // --- LOGIC TIẾN TRÌNH DHCP (D.O.R.A) ---
+    async function thucThiDHCP(tuNutBam) {
+        heThong.dangChayHieuUng = true;
+        
+        inLog("Windows IP Configuration...", "text-slate-400");
+        inLog("Đang gửi bản tin Broadcast xin cấp IP (Tiến trình D.O.R.A)...", "text-red-400 italic");
+
+        // D - Discover
+        inLog("-> [PC] gửi DHCP DISCOVER", "text-red-400");
+        await bayGoiTin('node-pc', 'node-switch', 'pkt-dhcp', 'D');
+        await bayGoiTin('node-switch', 'node-dhcp', 'pkt-dhcp', 'D');
+
+        if (heThong.dhcpDangMo) {
+            // O - Offer
+            inLog("<- [DHCP Server] đề nghị IP: DHCP OFFER", "text-red-400");
+            await bayGoiTin('node-dhcp', 'node-switch', 'pkt-dhcp', 'O');
+            await bayGoiTin('node-switch', 'node-pc', 'pkt-dhcp', 'O');
+
+            // R - Request
+            inLog("-> [PC] đồng ý mượn: DHCP REQUEST", "text-red-400");
+            await bayGoiTin('node-pc', 'node-switch', 'pkt-dhcp', 'R');
+            await bayGoiTin('node-switch', 'node-dhcp', 'pkt-dhcp', 'R');
+
+            // A - Acknowledge
+            inLog("<- [DHCP Server] xác nhận: DHCP ACK", "text-red-400");
+            await bayGoiTin('node-dhcp', 'node-switch', 'pkt-dhcp', 'A');
+            await bayGoiTin('node-switch', 'node-pc', 'pkt-dhcp', 'A');
+
+            // Cập nhật State thành công
+            heThong.pc.coMang = true;
+            heThong.pc.ip = "192.168.1.10";
+            heThong.pc.dns = "8.8.8.8";
+            
+            const badge = document.getElementById('badge-pc-ip');
+            badge.innerText = heThong.pc.ip;
+            badge.className = "ip-badge success";
+
+            inLog("", "");
+            inLog("Thành công! Máy tính đã được cấp IP:", "text-green-400 font-bold");
+            inLog(`   IPv4 Address. . . . . . . . . . . : ${heThong.pc.ip}`, "text-slate-300");
+            inLog(`   Subnet Mask . . . . . . . . . . . : 255.255.255.0`, "text-slate-300");
+            inLog(`   Default Gateway . . . . . . . . . : 192.168.1.1`, "text-slate-300");
+            inLog(`   DNS Servers . . . . . . . . . . . : ${heThong.pc.dns}`, "text-slate-300");
+
+        } else {
+            // Lỗi do tắt DHCP
+            inLog("... Timeout waiting for DHCP response.", "text-slate-500");
+            await new Promise(r => setTimeout(r, 1000));
+            
+            inLog("LỖI: Không nhận được phản hồi từ máy chủ DHCP.", "text-red-500 font-bold");
+            inLog("HẬU QUẢ: Windows tự động gán địa chỉ APIPA (Link-local).", "text-yellow-400 font-bold");
+            
+            heThong.pc.coMang = false;
+            heThong.pc.ip = "169.254.120.45"; // APIPA
+            heThong.pc.dns = "None";
+
+            const badge = document.getElementById('badge-pc-ip');
+            badge.innerText = heThong.pc.ip;
+            badge.className = "ip-badge error";
+            
+            inLog(`   Autoconfiguration IPv4 Address. . : ${heThong.pc.ip} (APIPA)`, "text-yellow-400");
+            inLog("Lưu ý: Mạng bị cô lập, không thể ra Internet.", "text-slate-400 italic");
+        }
+
+        heThong.dangChayHieuUng = false;
+    }
+
+    // --- LOGIC TIẾN TRÌNH DNS & PING ---
+    async function thucThiDNS(tuNutBam) {
+        if (heThong.dangChayHieuUng) return;
+        
+        const domain = "www.thebao.vn";
+
+        // Check điều kiện tiên quyết
+        if (heThong.pc.ip === null) {
+            inLog("LỖI: Máy tính chưa được cấu hình IP. Vui lòng xin cấp IP (DHCP) trước.", "text-red-500 font-bold");
+            return;
+        }
+        if (!heThong.pc.coMang) {
+            inLog(`Ping request could not find host ${domain}. Please check the name and try again.`, "text-slate-300");
+            inLog("NGUYÊN NHÂN: Đang dùng IP APIPA (169.254.x.x), không có đường ra ngoài (No Default Gateway) và không có DNS Server.", "text-red-500 font-bold");
+            return;
+        }
+
+        heThong.dangChayHieuUng = true;
+        inLog(`Đang phân giải tên miền ${domain}...`, "text-blue-300");
+
+        // 1. Phân giải DNS
+        inLog(`-> [PC] hỏi IP của ${domain} gửi đến DNS Server (8.8.8.8)`, "text-blue-400");
+        await bayGoiTin('node-pc', 'node-switch', 'pkt-dns', '?');
+        await bayGoiTin('node-switch', 'node-dns', 'pkt-dns', '?');
+
+        if (heThong.dnsDangMo) {
+            inLog("<- [DNS Server] phản hồi IP là 203.0.113.10", "text-blue-400");
+            await new Promise(r => setTimeout(r, 400)); // Delay mô phỏng tra cứu
+            
+            await bayGoiTin('node-dns', 'node-switch', 'pkt-dns', 'OK');
+            await bayGoiTin('node-switch', 'node-pc', 'pkt-dns', 'OK');
+
+            inLog(`Pinging ${domain} [203.0.113.10] with 32 bytes of data:`, "text-slate-300 mt-2");
+
+            // 2. HTTP / PING (ICMP thực tế, nhưng biểu diễn dạng gói tin tới Web)
+            for(let i=1; i<=3; i++) {
+                await bayGoiTin('node-pc', 'node-switch', 'pkt-http', 'Req');
+                await bayGoiTin('node-switch', 'node-web', 'pkt-http', 'Req');
+                
+                await bayGoiTin('node-web', 'node-switch', 'pkt-http', 'Rep');
+                await bayGoiTin('node-switch', 'node-pc', 'pkt-http', 'Rep');
+                inLog(`Reply from 203.0.113.10: bytes=32 time<1ms TTL=64`, "text-green-400");
+            }
+            
+            inLog("", "");
+            inLog(`Ping statistics for 203.0.113.10:`, "text-slate-300");
+            inLog(`    Packets: Sent = 3, Received = 3, Lost = 0 (0% loss),`, "text-slate-300");
+            inLog("=> KẾT LUẬN: Giao tiếp Web thành công!", "text-green-400 font-bold");
+
+        } else {
+            // Tắt DNS -> Lỗi NXDOMAIN
+            inLog("... Timeout waiting for DNS reply.", "text-slate-500");
+            await new Promise(r => setTimeout(r, 1500));
+            
+            inLog(`Ping request could not find host ${domain}. Please check the name and try again.`, "text-slate-300 mt-2");
+            inLog("LỖI: Máy chủ DNS không phản hồi.", "text-red-500 font-bold");
+            inLog("HẬU QUẢ TƯƠNG ĐƯƠNG WEB: Trình duyệt sẽ báo lỗi 'DNS_PROBE_FINISHED_NXDOMAIN' dù mạng vật lý vẫn đang cắm.", "text-yellow-400 font-bold");
+        }
+
+        heThong.dangChayHieuUng = false;
+    }
+
+    /* =========================================
+       6. KHÔI PHỤC MẶC ĐỊNH (RESET LAB)
+    ========================================= */
+    function resetLab() {
+        if(heThong.dangChayHieuUng) return; // Đang chạy thì cấm reset
+
+        // Reset JS State
+        heThong.pc.coMang = false;
+        heThong.pc.ip = null;
+        heThong.pc.dns = null;
+        heThong.dhcpDangMo = true;
+        heThong.dnsDangMo = true;
+        
+        // Reset UI Topology
+        const badge = document.getElementById('badge-pc-ip');
+        badge.innerText = "No IP";
+        badge.className = "ip-badge";
+
+        // Reset Toggles
+        document.getElementById('toggle-dhcp').checked = true;
+        document.getElementById('toggle-dns').checked = true;
+        document.getElementById('node-dhcp').classList.remove('offline');
+        document.getElementById('node-dns').classList.remove('offline');
+
+        // Reset Console
+        logContainer.innerHTML = '';
+        inLog("Hệ thống đã được khôi phục về trạng thái ban đầu.", "text-green-400 font-bold");
+        inLog("C:\\Users\\TheBao> ", "text-white font-bold mt-2");
+    }
+
+    // Init Vẽ cáp khi web load xong
+    window.onload = () => {
+        veDuongCap();
+        // Cuộn khung giữa màn hình trên Mobile
+        if (window.innerWidth <= 1024) {
+            wrapper.scrollLeft = 50;
+            wrapper.scrollTop = 50;
+        }
+    };
+</script>
+</body>
+</html>

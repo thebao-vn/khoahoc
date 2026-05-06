@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>THE BÁO: 2.5 Kiến trúc mạng không dây (WLC, AP)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Custom Scrollbar cho Console và Topology */
+        .custom-scrollbar::-webkit-scrollbar { height: 8px; width: 8px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        
+        .cli-scrollbar::-webkit-scrollbar { width: 6px; }
+        .cli-scrollbar::-webkit-scrollbar-track { background: #111827; }
+        .cli-scrollbar::-webkit-scrollbar-thumb { background: #374151; border-radius: 4px; }
+
+        /* Hiệu ứng Wi-Fi */
+        @keyframes wifi-pulse {
+            0% { transform: scale(0.5); opacity: 1; }
+            100% { transform: scale(2.5); opacity: 0; }
+        }
+        .wifi-wave {
+            position: absolute;
+            border-radius: 50%;
+            border: 2px solid #3b82f6;
+            animation: wifi-pulse 2s infinite ease-out;
+            pointer-events: none;
+        }
+
+        /* Hiệu ứng Phong bì đỏ rơi (Lỗi) */
+        @keyframes fall-and-shake {
+            0% { transform: translateY(-40px) scale(0.5) rotate(0deg); opacity: 0; }
+            20% { transform: translateY(0) scale(1.2) rotate(-10deg); opacity: 1; }
+            40% { transform: translateY(-10px) scale(1) rotate(10deg); }
+            60% { transform: translateY(0) rotate(-5deg); }
+            80% { transform: translateY(0) rotate(5deg); opacity: 1; }
+            100% { transform: translateY(20px) rotate(0deg); opacity: 0; }
+        }
+        .error-envelope {
+            position: absolute;
+            z-index: 50;
+            animation: fall-and-shake 2.5s forwards;
+            pointer-events: none;
+        }
+
+        /* Hiệu ứng Dòng dữ liệu CAPWAP */
+        @keyframes capwap-flow {
+            0% { background-position: 0 0; }
+            100% { background-position: 20px 0; }
+        }
+        .capwap-tunnel {
+            background-image: linear-gradient(90deg, #a855f7 50%, transparent 50%);
+            background-size: 20px 100%;
+            animation: capwap-flow 1s linear infinite;
+        }
+
+        /* Nhấp nháy lỗi hệ thống */
+        @keyframes error-pulse {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+            50% { box-shadow: 0 0 0 15px rgba(239, 68, 68, 0); }
+        }
+        .sys-error { animation: error-pulse 1.5s infinite; border-color: #ef4444 !important; }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-800 font-sans min-h-screen flex flex-col">
+
+    <!-- Header Sticky -->
+    <header class="bg-blue-900 text-white p-4 shadow-md sticky top-0 z-50 flex justify-between items-center">
+        <div>
+            <h1 class="text-lg md:text-2xl font-bold uppercase tracking-wide">THE BÁO: 2.5 Kiến trúc mạng không dây (WLC, AP)</h1>
+            <p class="text-xs md:text-sm text-blue-200">Mô phỏng cơ chế Split MAC, CAPWAP Tunnel và cấp nguồn PoE</p>
+        </div>
+        <button onclick="resetSystem()" class="bg-red-600 hover:bg-red-500 text-white px-4 py-2 rounded text-sm font-bold flex items-center shadow-lg transition-transform active:scale-95 shrink-0 ml-2">
+            <svg class="w-4 h-4 mr-1 md:mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+            <span class="hidden md:inline">Reset Cấu hình</span>
+            <span class="md:hidden">Reset</span>
+        </button>
+    </header>
+
+    <!-- Main Content Area -->
+    <main class="flex-1 flex flex-col w-full max-w-7xl mx-auto bg-white shadow-xl relative">
+        
+        <!-- Sơ đồ mạng (Khu vực có thể vuốt ngang trên Mobile) -->
+        <div class="w-full h-[50vh] md:h-auto md:min-h-[450px] overflow-auto custom-scrollbar bg-slate-50 border-b-4 border-slate-200 relative">
+            
+            <!-- Hướng dẫn mobile -->
+            <div class="md:hidden sticky left-0 top-2 w-full text-center pointer-events-none z-10">
+                <span class="bg-blue-100 text-blue-700 px-3 py-1 rounded-full text-xs font-semibold shadow opacity-80 animate-pulse">
+                    ↔ Vuốt ngang để xem toàn bộ sơ đồ ↔
+                </span>
+            </div>
+
+            <!-- Khung Topology cố định kích thước chống móp méo -->
+            <div class="min-w-[900px] h-full flex flex-col justify-center relative px-10 py-8">
+                
+                <!-- Nhãn Kiến trúc -->
+                <div class="absolute top-4 left-4 bg-white border border-gray-300 p-2 rounded shadow text-xs text-gray-600">
+                    <span class="font-bold text-blue-700">WLC Management VLAN:</span> 10<br>
+                    <span class="font-bold text-green-700">Switch Native VLAN:</span> 1
+                </div>
+
+                <!-- Tầng 1: WLC và Switch -->
+                <div class="flex justify-between items-center w-full px-16 relative z-10">
+                    
+                    <!-- WLC -->
+                    <div id="device-wlc" class="flex flex-col items-center relative transition-all duration-300">
+                        <div class="w-20 h-14 bg-blue-800 rounded flex items-center justify-center border-b-4 border-blue-950 shadow-lg relative z-10">
+                            <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 002-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
+                        </div>
+                        <div class="mt-2 text-center">
+                            <p class="font-bold text-sm text-gray-800">Cisco WLC</p>
+                            <p class="text-xs text-gray-500">IP: 192.168.10.2 (VLAN 10)</p>
+                            <span id="wlc-ssid-badge" class="mt-1 hidden inline-block bg-blue-100 text-blue-700 text-[10px] px-2 py-0.5 rounded border border-blue-300">SSID: Corp-WiFi</span>
+                        </div>
+                    </div>
+
+                    <!-- Đường link WLC - Switch -->
+                    <div class="flex-1 h-1 bg-gray-400 relative">
+                        <!-- Ống CAPWAP ngang (ẩn mặc định) -->
+                        <div id="capwap-horizontal" class="absolute inset-y-[-3px] inset-x-0 capwap-tunnel opacity-0 transition-opacity duration-500 rounded-full"></div>
+                        <div class="absolute -top-6 left-1/2 -translate-x-1/2 text-[10px] text-gray-500 bg-white px-1">Trunk Link</div>
+                    </div>
+
+                    <!-- Switch -->
+                    <div id="device-sw" class="flex flex-col items-center relative transition-all duration-300">
+                        <div class="w-24 h-12 bg-gray-700 rounded flex flex-col justify-center items-center border-b-4 border-gray-900 shadow-lg relative z-10">
+                            <div class="flex space-x-1 mb-1">
+                                <div class="w-2 h-2 bg-green-400 rounded-full"></div>
+                                <div class="w-2 h-2 bg-green-400 rounded-full"></div>
+                                <div class="w-2 h-2 bg-green-400 rounded-full"></div>
+                                <div class="w-2 h-2 bg-green-400 rounded-full"></div>
+                            </div>
+                            <div class="flex space-x-1">
+                                <div class="w-2 h-2 bg-green-400 rounded-full"></div>
+                                <div class="w-2 h-2 bg-green-400 rounded-full"></div>
+                                <div class="w-2 h-2 bg-green-400 rounded-full"></div>
+                                <div id="port-led" class="w-2 h-2 bg-gray-400 rounded-full transition-colors duration-300"></div>
+                            </div>
+                        </div>
+                        <div class="mt-2 text-center">
+                            <p class="font-bold text-sm text-gray-800">Access Switch</p>
+                            <p id="sw-port-label" class="text-xs text-gray-500">Gi0/1: VLAN 1 | PoE: Tắt</p>
+                        </div>
+                    </div>
+
+                </div>
+
+                <!-- Tầng 2: Đường nối xuống AP -->
+                <div class="w-full flex justify-end px-16 relative h-24">
+                    <div class="w-24 flex justify-center relative">
+                        <!-- Dây cáp dọc -->
+                        <div class="w-1 h-full bg-gray-400 absolute top-0"></div>
+                        <!-- Ống CAPWAP dọc (ẩn mặc định) -->
+                        <div id="capwap-vertical" class="absolute top-0 bottom-0 w-2 capwap-tunnel opacity-0 transition-opacity duration-500 rounded-full"></div>
+                        
+                        <!-- Label Split MAC -->
+                        <div id="label-split-mac" class="absolute right-6 top-1/2 -translate-y-1/2 w-32 bg-purple-100 border border-purple-300 p-2 rounded text-[10px] text-purple-800 opacity-0 transition-opacity duration-500 shadow-sm">
+                            <strong class="block mb-1">CAPWAP Tunnel</strong>
+                            Đóng gói toàn bộ Control & Data traffic đưa về WLC xử lý.
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tầng 3: AP và Client -->
+                <div class="flex justify-end items-center w-full px-16 relative z-10 gap-16">
+                    
+                    <!-- Access Point -->
+                    <div id="device-ap" class="flex flex-col items-center relative transition-all duration-300">
+                        
+                        <!-- Sóng Wi-Fi -->
+                        <div id="wifi-signal" class="absolute -top-4 w-12 h-12 hidden flex items-center justify-center pointer-events-none">
+                            <div class="wifi-wave" style="width: 20px; height: 20px;"></div>
+                            <div class="wifi-wave" style="width: 40px; height: 40px; animation-delay: 0.5s;"></div>
+                            <div class="wifi-wave" style="width: 60px; height: 60px; animation-delay: 1s;"></div>
+                        </div>
+
+                        <div class="w-16 h-16 bg-gray-200 rounded-full flex flex-col items-center justify-center border-4 border-gray-300 shadow-lg relative z-10">
+                            <div id="ap-status-led" class="w-3 h-3 bg-gray-500 rounded-full mb-1 transition-colors duration-300"></div>
+                            <div class="w-6 h-1 bg-gray-400 rounded"></div>
+                        </div>
+                        <div class="mt-2 text-center">
+                            <p class="font-bold text-sm text-gray-800">Lightweight AP</p>
+                            <p id="ap-status-text" class="text-xs text-gray-500">Mất nguồn</p>
+                        </div>
+                    </div>
+
+                    <!-- Client / Phone -->
+                    <div id="device-client" class="flex flex-col items-center opacity-50 transition-all duration-500 relative">
+                        <div class="w-10 h-16 bg-gray-800 rounded-lg border-y-4 border-gray-900 relative flex justify-center pt-1 shadow-lg">
+                            <div class="w-8 h-10 bg-blue-100 rounded-sm"></div>
+                            <div class="absolute bottom-1 w-2 h-2 rounded-full bg-gray-600"></div>
+                        </div>
+                        <div class="mt-2 text-center">
+                            <p class="font-bold text-sm text-gray-800">Smartphone</p>
+                            <p id="client-status-text" class="text-[10px] text-red-500">Ngắt kết nối</p>
+                        </div>
+                    </div>
+
+                </div>
+
+            </div>
+        </div>
+
+        <!-- Bảng điều khiển & CLI (Nằm dưới sơ đồ) -->
+        <div class="flex-1 flex flex-col md:flex-row border-t border-gray-200">
+            
+            <!-- Panel Điều khiển bằng Nút bấm -->
+            <div class="w-full md:w-5/12 p-5 bg-white border-r border-gray-200 flex flex-col gap-5 overflow-y-auto">
+                <h2 class="font-bold text-lg text-blue-900 border-b pb-2 flex items-center">
+                    <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"></path></svg>
+                    Bảng Điều Khiển Nhanh
+                </h2>
+
+                <!-- Tương tác Switch -->
+                <div class="bg-slate-50 border border-slate-200 p-4 rounded-lg shadow-sm">
+                    <h3 class="font-bold text-sm text-gray-700 mb-3 uppercase">Cấu hình Switch (Port Gi0/1)</h3>
+                    
+                    <div class="flex justify-between items-center mb-4">
+                        <span class="text-sm font-medium">Cấp nguồn PoE cho AP:</span>
+                        <button id="btn-poe" onclick="execCmd('poe')" class="w-12 h-6 rounded-full bg-gray-300 relative transition-colors duration-300 focus:outline-none shadow-inner">
+                            <div id="btn-poe-dot" class="w-5 h-5 bg-white rounded-full absolute top-0.5 left-0.5 shadow transition-transform duration-300"></div>
+                        </button>
+                    </div>
+
+                    <div class="flex flex-col gap-2">
+                        <span class="text-sm font-medium">Gán VLAN cho cổng nối AP:</span>
+                        <div class="grid grid-cols-2 gap-2">
+                            <button onclick="execCmd('vlan1')" class="bg-gray-200 hover:bg-gray-300 text-gray-700 text-xs py-2 px-2 rounded border border-gray-300 transition focus:ring-2 focus:ring-blue-400">VLAN 1 (Native)</button>
+                            <button onclick="execCmd('vlan10')" class="bg-gray-200 hover:bg-gray-300 text-gray-700 text-xs py-2 px-2 rounded border border-gray-300 transition focus:ring-2 focus:ring-blue-400">VLAN 10 (Management)</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tương tác WLC -->
+                <div class="bg-blue-50 border border-blue-200 p-4 rounded-lg shadow-sm">
+                    <h3 class="font-bold text-sm text-blue-800 mb-3 uppercase">Cấu hình WLC</h3>
+                    
+                    <div class="flex flex-col gap-3">
+                        <button id="btn-auth" onclick="execCmd('auth')" class="w-full bg-white hover:bg-blue-100 text-blue-700 font-medium py-2 px-4 rounded border border-blue-300 shadow-sm transition flex justify-between items-center">
+                            <span>1. Duyệt MAC của AP</span>
+                            <span id="badge-auth" class="text-xs bg-gray-200 text-gray-600 px-2 py-0.5 rounded">Chưa duyệt</span>
+                        </button>
+
+                        <button id="btn-ssid" onclick="execCmd('ssid')" class="w-full bg-white hover:bg-blue-100 text-blue-700 font-medium py-2 px-4 rounded border border-blue-300 shadow-sm transition flex justify-between items-center">
+                            <span>2. Cấu hình & Phát SSID</span>
+                            <span id="badge-ssid" class="text-xs bg-gray-200 text-gray-600 px-2 py-0.5 rounded">Tắt</span>
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- Gợi ý -->
+                <div class="mt-auto text-xs text-gray-500 bg-yellow-50 p-3 rounded border border-yellow-200">
+                    <strong class="text-yellow-700">Mục tiêu:</strong> Làm cho Client bắt được Wi-Fi. AP cần nguồn, đúng VLAN để liên lạc WLC, được WLC duyệt, và WLC phải phát sóng SSID.
+                </div>
+            </div>
+
+            <!-- Panel Console CLI -->
+            <div class="w-full md:w-7/12 bg-gray-900 flex flex-col relative h-[350px] md:h-auto">
+                <!-- Header Terminal -->
+                <div class="bg-gray-800 px-4 py-2 flex items-center border-b border-black shrink-0">
+                    <div class="flex space-x-2">
+                        <div class="w-3 h-3 rounded-full bg-red-500"></div>
+                        <div class="w-3 h-3 rounded-full bg-yellow-500"></div>
+                        <div class="w-3 h-3 rounded-full bg-green-500"></div>
+                    </div>
+                    <span class="ml-4 text-xs text-gray-400 font-mono">Cisco IOS CLI & Syslog</span>
+                </div>
+
+                <!-- Log Output -->
+                <div id="cli-output" class="flex-1 p-4 font-mono text-sm overflow-y-auto cli-scrollbar text-green-400 leading-relaxed space-y-1">
+                    <div class="text-gray-400">System bootstrap...</div>
+                    <div class="text-gray-400">Loading OS image... Done.</div>
+                    <div class="text-blue-300 mt-2">=== Nhập lệnh hoặc Dùng nút bấm để cấu hình ===</div>
+                </div>
+
+                <!-- Input Zone -->
+                <div class="p-2 bg-black flex items-center shrink-0">
+                    <span class="text-green-500 font-mono mr-2">Config#</span>
+                    <input type="text" id="cli-input" class="flex-1 bg-transparent text-green-400 font-mono focus:outline-none w-full" placeholder="Nhập lệnh (vd: power inline auto)..." autocomplete="off">
+                </div>
+            </div>
+
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="bg-black text-white text-center p-4 mt-auto border-t-2 border-gray-800 shrink-0">
+        <p class="text-sm font-semibold tracking-widest">Thiết kế bởi "THE BÁO"</p>
+        <p class="text-[10px] text-gray-500 mt-1">Cuộn chạm đáy - Giao diện tự do Responsive</p>
+    </footer>
+
+    <script>
+        /* 1. STATE MANAGEMENT */
+        let state = {
+            poe: false,
+            vlan: 1, // Default VLAN
+            auth: false,
+            ssid: false,
+        };
+
+        const WLC_VLAN = 10;
+
+        /* 2. DOM ELEMENTS */
+        const outCli = document.getElementById('cli-output');
+        const inCli = document.getElementById('cli-input');
+        
+        // UI Toggles & Badges
+        const btnPoeDot = document.getElementById('btn-poe-dot');
+        const btnPoeBg = document.getElementById('btn-poe');
+        const badgeAuth = document.getElementById('badge-auth');
+        const badgeSsid = document.getElementById('badge-ssid');
+
+        // Topology Elements
+        const swPortLed = document.getElementById('port-led');
+        const swPortLabel = document.getElementById('sw-port-label');
+        
+        const apLed = document.getElementById('ap-status-led');
+        const apText = document.getElementById('ap-status-text');
+        const wifiSignal = document.getElementById('wifi-signal');
+        
+        const capwapH = document.getElementById('capwap-horizontal');
+        const capwapV = document.getElementById('capwap-vertical');
+        const labelSplit = document.getElementById('label-split-mac');
+        const wlcBadge = document.getElementById('wlc-ssid-badge');
+        
+        const devClient = document.getElementById('device-client');
+        const clientText = document.getElementById('client-status-text');
+
+        /* 3. LOGGING SYSTEM (The "Look and Understand" part) */
+        function printLog(text, type = "cmd") {
+            const line = document.createElement('div');
+            
+            if (type === "cmd") {
+                line.innerHTML = `<span class="text-white">Switch(config)#</span> ${text}`;
+            } else if (type === "cmd-wlc") {
+                line.innerHTML = `<span class="text-white">(Cisco Controller) ></span> ${text}`;
+            } else if (type === "sys") {
+                line.innerHTML = `<span class="text-yellow-300">*Syslog:</span> ${text}`;
+            } else if (type === "err") {
+                line.innerHTML = `<span class="text-red-500 font-bold">%Error:</span> <span class="text-red-400">${text}</span>`;
+            } else if (type === "success") {
+                line.innerHTML = `<span class="text-blue-300 font-bold">*Success:</span> ${text}`;
+            }
+
+            outCli.appendChild(line);
+            outCli.scrollTop = outCli.scrollHeight; // Auto scroll to bottom
+        }
+
+        /* 4. ANIMATION SYSTEM (Red Envelope) */
+        function triggerErrorEnvelope(deviceId) {
+            const target = document.getElementById(deviceId);
+            if (!target) return;
+
+            // Remove existing if any
+            const existing = target.querySelector('.error-envelope');
+            if (existing) existing.remove();
+
+            const envelope = document.createElement('div');
+            envelope.className = 'error-envelope text-4xl';
+            envelope.innerHTML = '✉️'; // Red envelope emoji or simple text
+            // Style it to look red
+            envelope.style.textShadow = "0 0 5px red";
+            
+            // Append to target
+            target.appendChild(envelope);
+            target.classList.add('sys-error');
+            
+            setTimeout(() => {
+                target.classList.remove('sys-error');
+                if(envelope.parentNode) envelope.remove();
+            }, 2500);
+        }
+
+        /* 5. COMMAND EXECUTION ENGINE */
+        function execCmd(action) {
+            switch(action) {
+                // POE
+                case 'poe':
+                    state.poe = !state.poe;
+                    printLog("interface gigabitethernet 0/1", "cmd");
+                    if (state.poe) {
+                        printLog("power inline auto", "cmd");
+                        printLog("Interface Gi0/1: Cung cấp nguồn PoE cho thiết bị.", "sys");
+                    } else {
+                        printLog("power inline never", "cmd");
+                        printLog("Interface Gi0/1: Đã ngắt nguồn PoE.", "err");
+                    }
+                    break;
+                // VLAN
+                case 'vlan1':
+                case 'vlan10':
+                    const selectedVlan = action === 'vlan10' ? 10 : 1;
+                    if(state.vlan === selectedVlan) return; // No change
+                    state.vlan = selectedVlan;
+                    printLog("interface gigabitethernet 0/1", "cmd");
+                    printLog(`switchport access vlan ${state.vlan}`, "cmd");
+                    printLog(`Port Gi0/1 được gán vào VLAN ${state.vlan}.`, "sys");
+                    break;
+                // WLC Auth
+                case 'auth':
+                    state.auth = !state.auth;
+                    if(state.auth) {
+                        printLog("config ap mac-filter add AA:BB:CC:DD:EE:FF", "cmd-wlc");
+                        printLog("WLC: Đã thêm MAC của AP vào danh sách tin cậy.", "success");
+                    } else {
+                        printLog("config ap mac-filter delete AA:BB:CC:DD:EE:FF", "cmd-wlc");
+                        printLog("WLC: Đã gỡ AP khỏi danh sách.", "sys");
+                    }
+                    break;
+                // WLC SSID
+                case 'ssid':
+                    state.ssid = !state.ssid;
+                    if(state.ssid) {
+                        printLog("config wlan create 1 Corp-WiFi", "cmd-wlc");
+                        printLog("config wlan enable 1", "cmd-wlc");
+                        printLog("WLC: Đã phát sóng SSID 'Corp-WiFi'.", "success");
+                    } else {
+                        printLog("config wlan disable 1", "cmd-wlc");
+                        printLog("WLC: Đã tắt WLAN 1.", "sys");
+                    }
+                    break;
+            }
+            evaluateNetwork();
+        }
+
+        /* 6. CLI INPUT HANDLER */
+        inCli.addEventListener('keypress', function(e) {
+            if(e.key === 'Enter') {
+                const cmd = this.value.trim().toLowerCase();
+                this.value = ''; // clear input
+                if(cmd === '') return;
+
+                printLog(cmd, "cmd"); // echo command
+
+                // Basic parsing
+                if(cmd.includes('power inline auto')) execCmd('poe');
+                else if(cmd.includes('power inline never')) { if(state.poe) execCmd('poe'); }
+                else if(cmd.includes('vlan 10')) execCmd('vlan10');
+                else if(cmd.includes('vlan 1')) execCmd('vlan1');
+                else if(cmd.includes('mac-filter add')) { if(!state.auth) execCmd('auth'); }
+                else if(cmd.includes('wlan enable')) { if(!state.ssid) execCmd('ssid'); }
+                else if(cmd.includes('ping')) {
+                    printLog("Đang gửi ICMP Echo... Không khả dụng trong mô phỏng L2/Wireless cơ bản này.", "err");
+                }
+                else {
+                    printLog("Lỗi cú pháp (Syntax Error). Thử: 'power inline auto', 'switchport access vlan 10'.", "err");
+                }
+            }
+        });
+
+        /* 7. CORE LOGIC & UI RENDERER */
+        function evaluateNetwork() {
+            // Update UI Controls State
+            if(state.poe) {
+                btnPoeBg.classList.replace('bg-gray-300', 'bg-green-500');
+                btnPoeDot.style.transform = 'translateX(100%)';
+            } else {
+                btnPoeBg.classList.replace('bg-green-500', 'bg-gray-300');
+                btnPoeDot.style.transform = 'translateX(0)';
+            }
+
+            badgeAuth.innerText = state.auth ? "Đã duyệt ✓" : "Chưa duyệt";
+            badgeAuth.className = state.auth ? "text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded border border-green-300" : "text-xs bg-gray-200 text-gray-600 px-2 py-0.5 rounded";
+            
+            badgeSsid.innerText = state.ssid ? "Đang phát ✓" : "Tắt";
+            badgeSsid.className = state.ssid ? "text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded border border-blue-300" : "text-xs bg-gray-200 text-gray-600 px-2 py-0.5 rounded";
+
+            swPortLabel.innerText = `Gi0/1: VLAN ${state.vlan} | PoE: ${state.poe ? 'Bật' : 'Tắt'}`;
+
+            // Logic Rules (Cisco AP Lifecycle)
+            let hasPower = state.poe;
+            let hasMgmtIp = hasPower && (state.vlan === WLC_VLAN);
+            let capwapUp = hasMgmtIp && state.auth;
+            let clientUp = capwapUp && state.ssid;
+
+            // Render Switch Port LED
+            swPortLed.className = `w-2 h-2 rounded-full transition-colors duration-300 ${hasPower ? (hasMgmtIp ? 'bg-green-400' : 'bg-yellow-400') : 'bg-gray-400'}`;
+
+            // Evaluate AP State & Errors
+            if (!hasPower) {
+                apLed.className = "w-3 h-3 bg-gray-500 rounded-full mb-1";
+                apText.innerText = "Mất nguồn";
+                apText.className = "text-xs text-gray-500";
+            } else {
+                if (!hasMgmtIp) {
+                    apLed.className = "w-3 h-3 bg-yellow-500 rounded-full mb-1 animate-pulse";
+                    apText.innerText = "Lỗi IP/VLAN";
+                    apText.className = "text-xs text-yellow-600 font-bold";
+                    
+                    // Trigger Error on Switch if wrong VLAN
+                    if(state.vlan !== WLC_VLAN) {
+                        triggerErrorEnvelope('device-sw');
+                        printLog(`AP bị rơi vào VLAN ${state.vlan}. Không cùng dải mạng với WLC (VLAN 10). Rớt gói tin Discovery!`, "err");
+                    }
+                } else if (!capwapUp) {
+                    // Has IP but not authorized
+                    apLed.className = "w-3 h-3 bg-red-500 rounded-full mb-1 animate-ping";
+                    apText.innerText = "WLC Từ chối";
+                    apText.className = "text-xs text-red-500 font-bold";
+                    
+                    triggerErrorEnvelope('device-wlc');
+                    printLog("WLC nhận được Join Request nhưng TỪ CHỐI vì MAC của AP chưa được Authorize.", "err");
+                } else {
+                    // CAPWAP UP
+                    apLed.className = "w-3 h-3 bg-green-500 rounded-full mb-1";
+                    apText.innerText = "CAPWAP UP ✓";
+                    apText.className = "text-xs text-green-600 font-bold";
+                }
+            }
+
+            // Render CAPWAP Tunnels
+            if (capwapUp) {
+                capwapH.classList.remove('opacity-0');
+                capwapV.classList.remove('opacity-0');
+                labelSplit.classList.remove('opacity-0');
+            } else {
+                capwapH.classList.add('opacity-0');
+                capwapV.classList.add('opacity-0');
+                labelSplit.classList.add('opacity-0');
+            }
+
+            // Render WLC SSID Badge
+            if (state.ssid) {
+                wlcBadge.classList.remove('hidden');
+                if(!capwapUp) {
+                    printLog("WLC tạo SSID nhưng không có AP nào kết nối CAPWAP để đẩy cấu hình xuống.", "sys");
+                }
+            } else {
+                wlcBadge.classList.add('hidden');
+            }
+
+            // Render Wi-Fi & Client
+            if (capwapUp && state.ssid) {
+                wifiSignal.classList.remove('hidden');
+                devClient.classList.remove('opacity-50');
+                clientText.innerText = "Đã kết nối Wi-Fi";
+                clientText.className = "text-[10px] text-green-600 font-bold";
+            } else {
+                wifiSignal.classList.add('hidden');
+                devClient.classList.add('opacity-50');
+                clientText.innerText = "Ngắt kết nối";
+                clientText.className = "text-[10px] text-red-500";
+                
+                // If tunnel is up but no SSID
+                if(capwapUp && !state.ssid) {
+                    triggerErrorEnvelope('device-client');
+                    printLog("Client không tìm thấy mạng. WLC chưa cấu hình hoặc chưa bật SSID.", "err");
+                }
+            }
+        }
+
+        /* 8. RESET FUNCTION */
+        function resetSystem() {
+            state = { poe: false, vlan: 1, auth: false, ssid: false };
+            outCli.innerHTML = '<div class="text-blue-300">=== HỆ THỐNG ĐÃ ĐƯỢC RESET VỀ TRẠNG THÁI BAN ĐẦU ===</div>';
+            evaluateNetwork();
+        }
+
+        // Init
+        evaluateNetwork();
+
+    </script>
+</body>
+</html>

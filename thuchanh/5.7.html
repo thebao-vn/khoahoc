@@ -1,0 +1,642 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>THE BÁO: Bảo mật mạng không dây (Open, WPA, WPA2, WPA3)</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome cho Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <style>
+        /* Custom Styles & Animations */
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        
+        /* Grid nền cho sơ đồ mạng */
+        .bg-grid {
+            background-size: 40px 40px;
+            background-image: 
+                linear-gradient(to right, rgba(0, 0, 0, 0.05) 1px, transparent 1px),
+                linear-gradient(to bottom, rgba(0, 0, 0, 0.05) 1px, transparent 1px);
+            background-color: #f8fafc;
+        }
+
+        /* Hiệu ứng sóng Wifi */
+        .wifi-waves {
+            position: absolute;
+            border-radius: 50%;
+            border: 2px solid #3b82f6;
+            opacity: 0;
+            animation: ripple 2s infinite ease-out;
+        }
+        .wifi-waves:nth-child(2) { animation-delay: 0.5s; }
+        .wifi-waves:nth-child(3) { animation-delay: 1s; }
+
+        @keyframes ripple {
+            0% { width: 0; height: 0; opacity: 0.8; top: 50%; left: 50%; transform: translate(-50%, -50%); }
+            100% { width: 300px; height: 300px; opacity: 0; top: 50%; left: 50%; transform: translate(-50%, -50%); border-width: 1px; }
+        }
+
+        /* Hiệu ứng gửi gói tin */
+        .packet {
+            position: absolute;
+            z-index: 50;
+            transition: all 1.5s linear;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+            transform: translate(-50%, -50%);
+        }
+
+        /* Console scrollbar */
+        .cli-scroll::-webkit-scrollbar { width: 8px; }
+        .cli-scroll::-webkit-scrollbar-track { background: #1a202c; }
+        .cli-scroll::-webkit-scrollbar-thumb { background: #4a5568; border-radius: 4px; }
+        
+        /* Hacker Scan */
+        .hacker-scan {
+            position: absolute;
+            width: 400px; height: 400px;
+            border-radius: 50%;
+            background: conic-gradient(from 0deg, transparent 70%, rgba(239, 68, 68, 0.4) 100%);
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            animation: spin 4s linear infinite;
+            pointer-events: none;
+            display: none;
+        }
+        @keyframes spin { 100% { transform: translate(-50%, -50%) rotate(360deg); } }
+        
+        .hacker-active .hacker-scan { display: block; }
+
+        /* Hacker attack animation */
+        @keyframes crackData {
+            0%, 100% { color: #f87171; }
+            50% { color: #ffffff; text-shadow: 0 0 8px #f87171; }
+        }
+        .cracking { animation: crackData 0.2s infinite; font-family: monospace; }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col bg-slate-100 text-slate-800">
+
+    <!-- Header - Sticky -->
+    <header class="sticky top-0 z-50 bg-blue-800 text-white shadow-lg border-b-4 border-blue-600">
+        <div class="max-w-7xl mx-auto px-4 py-3 flex justify-between items-center">
+            <h1 class="text-xl md:text-2xl font-bold tracking-wide">
+                <i class="fa-solid fa-shield-halved mr-2"></i>THE BÁO: BẢO MẬT MẠNG KHÔNG DÂY (5.7)
+            </h1>
+            <span class="hidden md:inline-block bg-blue-600 px-3 py-1 rounded-full text-sm">Security Fundamentals</span>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="flex-grow max-w-7xl mx-auto w-full p-4 flex flex-col gap-6">
+        
+        <!-- Hướng dẫn ngắn -->
+        <div class="bg-white p-4 rounded-lg shadow-sm border-l-4 border-blue-500 text-sm md:text-base">
+            <p><strong>Mục tiêu:</strong> Thử nghiệm các mức độ bảo mật. Gửi dữ liệu từ Nhân viên và đóng vai Hacker để thử bẻ khóa gói tin đó.</p>
+            <ul class="list-disc ml-5 mt-2 text-slate-600">
+                <li><strong>OPEN:</strong> Không bảo mật. Hacker đọc được ngay lập tức.</li>
+                <li><strong>WPA:</strong> Bảo mật cũ. Hacker có thể dùng Tool để bẻ khóa (Crack) và lấy dữ liệu.</li>
+                <li><strong>WPA2 / WPA3:</strong> Chuẩn hiện đại. Hacker bắt được nhưng <strong>không thể bẻ khóa</strong>.</li>
+            </ul>
+        </div>
+
+        <!-- Topology Section -->
+        <section class="bg-white rounded-xl shadow-md border border-slate-300 overflow-hidden flex flex-col">
+            <div class="bg-slate-200 px-4 py-2 border-b border-slate-300 font-semibold flex justify-between items-center">
+                <span><i class="fa-solid fa-network-wired text-blue-600 mr-2"></i>Sơ đồ mạng (Topology)</span>
+                <span class="text-xs text-slate-500">Kéo/Cuộn để xem toàn bộ trên Mobile</span>
+            </div>
+            
+            <div class="relative w-full h-[50vh] md:h-[500px] overflow-auto bg-grid" id="topology-container">
+                <div class="relative w-[900px] h-[500px] mx-auto" id="topology-arena">
+                    
+                    <!-- Router / Access Point -->
+                    <div id="device-router" class="absolute top-10 left-[400px] w-32 h-32 flex flex-col items-center justify-center cursor-pointer group">
+                        <div class="relative">
+                            <i class="fa-solid fa-router text-5xl text-blue-600 drop-shadow-md"></i>
+                            <div class="wifi-waves"></div>
+                            <div class="wifi-waves"></div>
+                            <div class="wifi-waves"></div>
+                            <!-- Shield Icon -->
+                            <div id="router-shield" class="absolute -bottom-2 -right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs border-2 border-white shadow-sm transition-colors duration-300">
+                                <i class="fa-solid fa-lock-open"></i>
+                            </div>
+                        </div>
+                        <div class="mt-2 bg-white px-3 py-1 rounded shadow text-sm font-bold border border-slate-200 text-center">
+                            WLAN AP<br>
+                            <span id="label-ap-sec" class="text-xs text-red-500 font-normal">OPEN</span>
+                        </div>
+                    </div>
+
+                    <!-- Legitimate Client -->
+                    <div id="device-client" class="absolute bottom-10 left-20 w-28 h-32 flex flex-col items-center justify-center">
+                        <div class="relative">
+                            <i class="fa-solid fa-laptop text-5xl text-slate-700 drop-shadow-md"></i>
+                            <div id="client-status" class="absolute -bottom-2 -right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs border-2 border-white shadow-sm">
+                                <i class="fa-solid fa-xmark"></i>
+                            </div>
+                        </div>
+                        <div class="mt-2 bg-white px-2 py-1 rounded shadow text-sm font-bold border border-slate-200 text-center">
+                            Nhân viên<br>
+                            <span id="label-client-status" class="text-xs text-red-500 font-normal">Ngắt kết nối</span>
+                        </div>
+                        <svg id="link-line" class="absolute hidden top-0 left-0 w-full h-full pointer-events-none" style="z-index:-1; overflow:visible;">
+                            <line x1="0" y1="0" x2="0" y2="0" stroke="#10b981" stroke-width="3" stroke-dasharray="5,5" class="animate-pulse" />
+                        </svg>
+                    </div>
+
+                    <!-- Hacker -->
+                    <div id="device-hacker" class="absolute bottom-20 right-20 w-32 h-32 flex flex-col items-center justify-center hacker-active">
+                        <div class="relative">
+                            <div class="hacker-scan"></div>
+                            <i id="hacker-icon" class="fa-solid fa-user-secret text-5xl text-red-600 drop-shadow-md z-10 relative transition-all"></i>
+                            <!-- Trạng thái capture -->
+                            <div id="hacker-badge" class="absolute -top-2 -right-4 bg-yellow-500 text-black text-[10px] font-bold px-1 rounded hidden z-20 animate-bounce">
+                                CAUGHT
+                            </div>
+                        </div>
+                        <div class="mt-2 bg-white px-2 py-1 rounded shadow text-sm font-bold border border-slate-200 text-center z-10">
+                            Kẻ tấn công<br>
+                            <span class="text-xs text-slate-500 font-normal" id="hacker-action-text">Sniffing (Lắng nghe)</span>
+                        </div>
+                        <!-- Hộp thoại thu thập dữ liệu của Hacker -->
+                        <div id="hacker-loot" class="absolute -top-20 -left-16 bg-black text-green-400 text-xs p-2 rounded shadow-lg border border-red-500 opacity-0 transition-opacity duration-300 w-56 pointer-events-none z-20">
+                            <div class="font-bold text-red-500 mb-1 border-b border-gray-700 pb-1" id="hacker-loot-title"><i class="fa-solid fa-skull"></i> Giải mã hoàn tất</div>
+                            <div id="hacker-loot-data" class="break-words font-mono mt-1"></div>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+        </section>
+
+        <!-- Controls & CLI Container -->
+        <section class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            
+            <!-- Control Panel -->
+            <div class="bg-white rounded-xl shadow-md border border-slate-300 flex flex-col h-full">
+                <div class="bg-slate-200 px-4 py-2 border-b border-slate-300 font-semibold flex justify-between items-center">
+                    <span><i class="fa-solid fa-sliders text-indigo-600 mr-2"></i>Bảng điều khiển</span>
+                    <button onclick="simReset()" class="bg-slate-600 hover:bg-slate-700 text-white text-xs px-3 py-1 rounded shadow transition"><i class="fa-solid fa-rotate-right mr-1"></i>Reset</button>
+                </div>
+                
+                <div class="p-4 flex flex-col gap-4 flex-grow overflow-y-auto">
+                    <!-- Router Config -->
+                    <div class="border border-slate-200 rounded p-3 bg-slate-50">
+                        <h3 class="font-bold text-blue-800 mb-2 border-b pb-1">1. Cấu hình WLAN AP</h3>
+                        <div class="flex flex-wrap gap-2 mb-3">
+                            <button onclick="actionSetSecurity('OPEN')" id="btn-sec-open" class="btn-sec bg-red-100 text-red-700 border border-red-300 px-3 py-1 rounded hover:bg-red-200 transition font-semibold ring-2 ring-red-500">OPEN</button>
+                            <button onclick="actionSetSecurity('WPA')" id="btn-sec-wpa" class="btn-sec bg-yellow-100 text-yellow-700 border border-yellow-300 px-3 py-1 rounded hover:bg-yellow-200 transition">WPA</button>
+                            <button onclick="actionSetSecurity('WPA2')" id="btn-sec-wpa2" class="btn-sec bg-green-100 text-green-700 border border-green-300 px-3 py-1 rounded hover:bg-green-200 transition">WPA2</button>
+                            <button onclick="actionSetSecurity('WPA3')" id="btn-sec-wpa3" class="btn-sec bg-purple-100 text-purple-700 border border-purple-300 px-3 py-1 rounded hover:bg-purple-200 transition">WPA3</button>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <input type="text" id="ap-password" placeholder="Pass của AP (Bỏ trống nếu OPEN)" class="border rounded px-2 py-1 text-sm flex-grow disabled:bg-slate-200 disabled:text-slate-400" disabled onchange="actionSetPassword(this.value)">
+                            <button onclick="actionSetPassword(document.getElementById('ap-password').value)" id="btn-set-pwd" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-sm disabled:opacity-50" disabled>Lưu</button>
+                        </div>
+                    </div>
+
+                    <!-- Client Action -->
+                    <div class="border border-slate-200 rounded p-3 bg-slate-50">
+                        <h3 class="font-bold text-slate-700 mb-2 border-b pb-1">2. Thao tác Client (Nhân viên)</h3>
+                        <div class="flex items-center gap-2 mb-3">
+                            <input type="text" id="client-password" placeholder="Pass Wifi..." class="border rounded px-2 py-1 text-sm w-1/2">
+                            <button onclick="actionConnect()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1 rounded text-sm transition shadow flex-grow"><i class="fa-solid fa-wifi mr-1"></i>Kết nối</button>
+                        </div>
+                        
+                        <div class="mt-2 flex flex-col gap-2 border-t pt-2 border-slate-200">
+                            <div class="text-xs font-semibold text-slate-500">Nội dung quan trọng cần gửi:</div>
+                            <div class="text-sm font-mono bg-white p-2 border rounded text-blue-800 break-words">Tài khoản: root | Pass: admin123</div>
+                            <button onclick="actionSendData()" id="btn-send-data" class="bg-teal-500 hover:bg-teal-600 text-white px-4 py-2 rounded shadow transition flex justify-center items-center gap-2 opacity-50 cursor-not-allowed mt-1" disabled>
+                                <i class="fa-regular fa-paper-plane"></i> Gửi gói tin lên Mạng
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Hacker Action -->
+                    <div class="border border-red-200 rounded p-3 bg-red-50">
+                        <h3 class="font-bold text-red-700 mb-2 border-b border-red-200 pb-1">3. Thao tác Hacker (Kẻ tấn công)</h3>
+                        <div class="text-sm text-slate-600 mb-2 flex items-center gap-2">
+                            <i class="fa-solid fa-satellite-dish text-red-400"></i>
+                            <span id="hacker-status-text">Đang rình rập... Chưa bắt được gói tin nào.</span>
+                        </div>
+                        <button onclick="actionHackerAttack()" id="btn-hacker-attack" class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded shadow transition flex justify-center items-center gap-2 opacity-50 cursor-not-allowed w-full" disabled>
+                            <i class="fa-solid fa-unlock-keyhole"></i> Tiến hành Bẻ khóa & Đọc dữ liệu
+                        </button>
+                    </div>
+
+                </div>
+            </div>
+
+            <!-- CLI Console -->
+            <div class="bg-[#1a202c] rounded-xl shadow-md border-2 border-gray-700 flex flex-col overflow-hidden h-[450px]">
+                <div class="bg-gray-800 px-4 py-2 font-mono text-xs text-gray-300 flex justify-between items-center border-b border-gray-700">
+                    <span><i class="fa-solid fa-terminal mr-2"></i>Terminal Simulator</span>
+                    <span class="text-green-400"><i class="fa-solid fa-circle text-[8px] animate-pulse relative -top-px mr-1"></i>Live</span>
+                </div>
+                
+                <!-- Output -->
+                <div id="cli-output" class="flex-grow p-4 font-mono text-sm overflow-y-auto cli-scroll text-green-400 break-words whitespace-pre-wrap flex flex-col gap-1">
+                    <div class="text-gray-400">Welcome to Simulation OS.</div>
+                    <div class="text-yellow-400">--- Hướng dẫn lệnh CLI ---</div>
+                    <div class="text-gray-400">- Client gõ: <span class="text-white">ping</span> (Gửi dữ liệu)</div>
+                    <div class="text-gray-400">- Hacker gõ: <span class="text-white">crack</span> (Bẻ khóa gói tin đã bắt)</div>
+                    <div class="text-gray-500 border-b border-gray-700 pb-2 mb-2">----------------------</div>
+                </div>
+
+                <!-- Input -->
+                <div class="flex bg-black p-2 border-t border-gray-700 items-center">
+                    <span class="text-green-400 font-mono mr-2">user@sys></span>
+                    <input type="text" id="cli-input" class="bg-transparent text-white font-mono text-sm flex-grow outline-none placeholder-gray-600" placeholder="Nhập lệnh..." autocomplete="off">
+                </div>
+            </div>
+
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="bg-black text-gray-400 p-4 text-center text-sm border-t-4 border-blue-600 mt-auto shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)]">
+        <div class="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center">
+            <p>Kết thúc chủ đề 5.</p>
+            <p class="font-bold text-white mt-2 md:mt-0 tracking-widest"><i class="fa-solid fa-bolt text-yellow-400 mr-1"></i> THIẾT KẾ BỞI THE BÁO</p>
+        </div>
+    </footer>
+
+    <!-- JavaScript Logic -->
+    <script>
+        // --- STATE MANAGEMENT ---
+        const state = {
+            ap: {
+                security: 'OPEN', // OPEN, WPA, WPA2, WPA3
+                password: ''
+            },
+            client: {
+                connected: false,
+                payload: "Tài khoản: root | Pass: admin123"
+            },
+            hacker: {
+                capturedPacket: null // Lưu trữ: { payload: string, secType: string }
+            },
+            isAnimating: false
+        };
+
+        // --- DOM ELEMENTS ---
+        const cliOutput = document.getElementById('cli-output');
+        const cliInput = document.getElementById('cli-input');
+        
+        // AP UI
+        const apSecLabel = document.getElementById('label-ap-sec');
+        const apShield = document.getElementById('router-shield');
+        const apPwdInput = document.getElementById('ap-password');
+        const apPwdBtn = document.getElementById('btn-set-pwd');
+        
+        // Client UI
+        const clientStatusIcon = document.getElementById('client-status');
+        const clientStatusLabel = document.getElementById('label-client-status');
+        const btnSendData = document.getElementById('btn-send-data');
+        
+        // Hacker UI
+        const btnHackerAttack = document.getElementById('btn-hacker-attack');
+        const hackerStatusText = document.getElementById('hacker-status-text');
+        const hackerBadge = document.getElementById('hacker-badge');
+        const hackerIcon = document.getElementById('hacker-icon');
+        const hackerActionText = document.getElementById('hacker-action-text');
+
+        // Topology Elements
+        const arena = document.getElementById('topology-arena');
+        const deviceRouter = document.getElementById('device-router');
+        const deviceClient = document.getElementById('device-client');
+        const deviceHacker = document.getElementById('device-hacker');
+        const hackerLoot = document.getElementById('hacker-loot');
+        const hackerLootData = document.getElementById('hacker-loot-data');
+        const hackerLootTitle = document.getElementById('hacker-loot-title');
+        const linkLine = document.getElementById('link-line');
+
+        // --- CORE FUNCTIONS ---
+
+        function printCLI(text, type = 'normal') {
+            const div = document.createElement('div');
+            if (type === 'error') div.className = 'text-red-400';
+            else if (type === 'success') div.className = 'text-green-400 font-bold';
+            else if (type === 'system') div.className = 'text-blue-300 italic';
+            else if (type === 'warning') div.className = 'text-yellow-400';
+            else if (type === 'hacker') div.className = 'text-purple-400 font-bold';
+            else div.className = 'text-gray-300'; 
+            
+            div.textContent = text;
+            cliOutput.appendChild(div);
+            cliOutput.scrollTop = cliOutput.scrollHeight;
+        }
+
+        function updateAPButtonsUI(sec) {
+            document.querySelectorAll('.btn-sec').forEach(btn => {
+                btn.classList.remove('ring-2', 'ring-red-500', 'ring-yellow-500', 'ring-green-500', 'ring-purple-500');
+            });
+            if(sec === 'OPEN') document.getElementById('btn-sec-open').classList.add('ring-2', 'ring-red-500');
+            if(sec === 'WPA') document.getElementById('btn-sec-wpa').classList.add('ring-2', 'ring-yellow-500');
+            if(sec === 'WPA2') document.getElementById('btn-sec-wpa2').classList.add('ring-2', 'ring-green-500');
+            if(sec === 'WPA3') document.getElementById('btn-sec-wpa3').classList.add('ring-2', 'ring-purple-500');
+        }
+
+        // --- ACTION LOGIC ---
+
+        function actionSetSecurity(secType, autoLog = true) {
+            secType = secType.toUpperCase();
+            if(autoLog) printCLI(`admin@ap> set wlan security ${secType}`, 'normal');
+
+            state.ap.security = secType;
+            resetHackerState(); // Xóa gói tin cũ nếu đổi bảo mật
+            
+            if (secType === 'OPEN') {
+                state.ap.password = '';
+                apPwdInput.value = '';
+                apPwdInput.disabled = true;
+                apPwdBtn.disabled = true;
+                apSecLabel.textContent = 'OPEN';
+                apSecLabel.className = 'text-xs font-normal text-red-500';
+                
+                apShield.className = 'absolute -bottom-2 -right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs border-2 border-white shadow-sm transition-colors duration-300';
+                apShield.innerHTML = '<i class="fa-solid fa-lock-open"></i>';
+                printCLI(`* Chú ý: Chế độ OPEN không mã hóa. Dữ liệu sẽ dễ dàng bị bắt và đọc.`, 'warning');
+            } else {
+                apPwdInput.disabled = false;
+                apPwdBtn.disabled = false;
+                apSecLabel.textContent = secType;
+                
+                let colorClass = secType === 'WPA' ? 'text-yellow-600' : 'text-green-600';
+                let bgClass = secType === 'WPA' ? 'bg-yellow-500' : 'bg-green-500';
+                if(secType === 'WPA3') { colorClass = 'text-purple-600'; bgClass = 'bg-purple-500'; }
+                
+                apSecLabel.className = `text-xs font-bold ${colorClass}`;
+                apShield.className = `absolute -bottom-2 -right-2 ${bgClass} text-white rounded-full w-6 h-6 flex items-center justify-center text-xs border-2 border-white shadow-sm transition-colors duration-300`;
+                apShield.innerHTML = '<i class="fa-solid fa-lock"></i>';
+            }
+
+            if(state.client.connected) disconnectClient("Bảo mật AP thay đổi.");
+            updateAPButtonsUI(secType);
+        }
+
+        function actionSetPassword(pwd, autoLog = true) {
+            if (pwd.length < 8 && state.ap.security !== 'OPEN') {
+                printCLI(`% Lỗi: Mật khẩu phải >= 8 ký tự.`, 'error');
+                return;
+            }
+            if(autoLog) printCLI(`admin@ap> set password ********`, 'normal');
+            state.ap.password = pwd;
+            if(state.client.connected) disconnectClient("Mật khẩu thay đổi.");
+            printCLI(`+ Đã lưu mật khẩu AP.`, 'success');
+        }
+
+        function actionConnect(pwdParam = null, autoLog = true) {
+            let pwd = pwdParam !== null ? pwdParam : document.getElementById('client-password').value;
+            if(autoLog) printCLI(`client@pc> connect ap`, 'normal');
+            
+            setTimeout(() => {
+                if (state.ap.security === 'OPEN') {
+                    connectClientSuccess();
+                } else {
+                    if (state.ap.password === '') {
+                        printCLI(`% AP chưa có mật khẩu!`, 'error');
+                        visualizeError(deviceClient);
+                    } else if (pwd === state.ap.password) {
+                        connectClientSuccess();
+                    } else {
+                        printCLI(`% Sai mật khẩu (Handshake Failed).`, 'error');
+                        visualizeError(deviceClient);
+                    }
+                }
+            }, 500);
+        }
+
+        function connectClientSuccess() {
+            state.client.connected = true;
+            printCLI(`+ Client kết nối thành công.`, 'success');
+            
+            clientStatusIcon.className = 'absolute -bottom-2 -right-2 bg-green-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs border-2 border-white shadow-sm';
+            clientStatusIcon.innerHTML = '<i class="fa-solid fa-check"></i>';
+            clientStatusLabel.textContent = 'Đã kết nối';
+            clientStatusLabel.className = 'text-xs text-green-600 font-bold';
+            
+            btnSendData.disabled = false;
+            btnSendData.classList.remove('opacity-50', 'cursor-not-allowed');
+            drawConnectionLine();
+        }
+
+        function disconnectClient(reason = "") {
+            state.client.connected = false;
+            clientStatusIcon.className = 'absolute -bottom-2 -right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs border-2 border-white shadow-sm';
+            clientStatusIcon.innerHTML = '<i class="fa-solid fa-xmark"></i>';
+            clientStatusLabel.textContent = 'Ngắt kết nối';
+            clientStatusLabel.className = 'text-xs text-red-500 font-normal';
+            
+            btnSendData.disabled = true;
+            btnSendData.classList.add('opacity-50', 'cursor-not-allowed');
+            linkLine.classList.add('hidden');
+        }
+
+        function drawConnectionLine() {
+            const line = linkLine.querySelector('line');
+            const rRect = deviceRouter.getBoundingClientRect();
+            const cRect = deviceClient.getBoundingClientRect();
+            const aRect = arena.getBoundingClientRect();
+
+            line.setAttribute('x1', cRect.left - aRect.left + cRect.width / 2);
+            line.setAttribute('y1', cRect.top - aRect.top + cRect.height / 2);
+            line.setAttribute('x2', rRect.left - aRect.left + rRect.width / 2);
+            line.setAttribute('y2', rRect.top - aRect.top + rRect.height / 2);
+            linkLine.classList.remove('hidden');
+        }
+
+        function resetHackerState() {
+            state.hacker.capturedPacket = null;
+            hackerBadge.classList.add('hidden');
+            hackerStatusText.innerHTML = 'Đang rình rập... Chưa bắt được gói tin nào.';
+            btnHackerAttack.disabled = true;
+            btnHackerAttack.classList.add('opacity-50', 'cursor-not-allowed');
+            hackerLoot.classList.remove('opacity-100');
+            hackerLoot.classList.add('opacity-0');
+            hackerActionText.textContent = "Sniffing";
+            hackerIcon.classList.remove('text-purple-600', 'animate-pulse');
+            hackerIcon.classList.add('text-red-600');
+        }
+
+        // --- GỬI DỮ LIỆU & HACKER BẮT GÓI TIN ---
+        function actionSendData(autoLog = true) {
+            if (!state.client.connected) return;
+            if (state.isAnimating) return;
+
+            if(autoLog) printCLI(`client@pc> ping -send_data`, 'normal');
+            state.isAnimating = true;
+            
+            resetHackerState(); // Xóa hiển thị cũ
+
+            const packet = document.createElement('div');
+            packet.className = 'packet';
+            let currentSec = state.ap.security;
+
+            if (currentSec !== 'OPEN') {
+                packet.innerHTML = `<i class="fa-solid fa-box-archive text-3xl text-green-500 drop-shadow-md"></i>`;
+                printCLI(`* Đang gửi: Gói tin đã được bọc mã hóa (${currentSec})...`, 'system');
+            } else {
+                packet.innerHTML = `<i class="fa-solid fa-envelope-open-text text-3xl text-red-500 drop-shadow-md"></i>`;
+                printCLI(`* CẢNH BÁO: Đang gửi gói tin dạng văn bản rõ (Plaintext)!`, 'warning');
+            }
+
+            arena.appendChild(packet);
+
+            const rRect = deviceRouter.getBoundingClientRect();
+            const cRect = deviceClient.getBoundingClientRect();
+            const aRect = arena.getBoundingClientRect();
+
+            packet.style.left = (cRect.left - aRect.left + cRect.width / 2) + 'px';
+            packet.style.top = (cRect.top - aRect.top + cRect.height / 2) + 'px';
+
+            setTimeout(() => {
+                packet.style.left = (rRect.left - aRect.left + rRect.width / 2) + 'px';
+                packet.style.top = (rRect.top - aRect.top + rRect.height / 2) + 'px';
+
+                // Giữa đường, Hacker copy gói tin
+                setTimeout(() => {
+                    deviceHacker.classList.add('scale-110');
+                    setTimeout(()=> deviceHacker.classList.remove('scale-110'), 300);
+
+                    // Lưu vào state của Hacker
+                    state.hacker.capturedPacket = {
+                        payload: state.client.payload,
+                        secType: currentSec
+                    };
+
+                    // Cập nhật UI Hacker
+                    hackerBadge.classList.remove('hidden');
+                    hackerStatusText.innerHTML = `<span class="text-red-600 font-bold">Đã bắt được 1 gói tin (${currentSec}). Sẵn sàng Bẻ khóa!</span>`;
+                    btnHackerAttack.disabled = false;
+                    btnHackerAttack.classList.remove('opacity-50', 'cursor-not-allowed');
+                    
+                    printCLI(`[HACKER] Đã sao chép lén gói tin đang bay trên không trung!`, 'hacker');
+
+                }, 750); 
+            }, 50);
+
+            setTimeout(() => {
+                packet.remove();
+                printCLI(`+ Dữ liệu đã đến Router đích.`, 'success');
+                state.isAnimating = false;
+            }, 1550);
+        }
+
+        // --- HACKER TẤN CÔNG / GIẢI MÁ ---
+        function actionHackerAttack(autoLog = true) {
+            if (!state.hacker.capturedPacket) return;
+            if (state.isAnimating) return;
+
+            let pkt = state.hacker.capturedPacket;
+            
+            if(autoLog) printCLI(`hacker@kali> aircrack-ng capture.cap`, 'normal');
+            
+            // UI Update
+            hackerActionText.textContent = "Đang Cracking...";
+            hackerIcon.classList.remove('text-red-600');
+            hackerIcon.classList.add('text-purple-600', 'animate-pulse');
+            hackerLoot.classList.remove('opacity-100');
+            hackerLoot.classList.add('opacity-0');
+
+            if (pkt.secType === 'OPEN') {
+                printCLI(`* Phân tích mạng OPEN: Không phát hiện mã hóa. Đọc trực tiếp.`, 'system');
+                setTimeout(() => { showHackerResult(true, pkt.payload, "Đọc trực tiếp Plaintext"); }, 800);
+            } 
+            else if (pkt.secType === 'WPA') {
+                printCLI(`* Phát hiện WPA (TKIP). Đang chạy Brute-force & tính toán khóa...`, 'warning');
+                setTimeout(() => { 
+                    printCLI(`[HACKER] Đã tìm ra lỗ hổng của WPA. Khóa bị bẻ gãy!`, 'hacker');
+                    showHackerResult(true, pkt.payload, "Bẻ khóa WPA thành công"); 
+                }, 2000); // Tốn thời gian crack
+            } 
+            else {
+                // WPA2, WPA3
+                printCLI(`* Phát hiện chuẩn ${pkt.secType} (AES/SAE). Đang cố gắng Brute-force...`, 'warning');
+                setTimeout(() => { 
+                    printCLI(`[HACKER] Thất bại. Thuật toán mã hóa quá mạnh, không thể giải mã nội dung.`, 'error');
+                    let gibberish = btoa(Math.random().toString()).substring(0, 20) + "==";
+                    showHackerResult(false, gibberish, `Thất bại - Dữ liệu bị mã hóa (${pkt.secType})`); 
+                }, 2500);
+            }
+        }
+
+        function showHackerResult(isSuccess, data, titleStr) {
+            hackerIcon.classList.remove('animate-pulse');
+            hackerActionText.textContent = "Hoàn tất phân tích";
+            hackerLoot.classList.remove('opacity-0');
+            hackerLoot.classList.add('opacity-100');
+            
+            hackerLootTitle.innerHTML = `<i class="fa-solid ${isSuccess ? 'fa-skull' : 'fa-shield'}"></i> ` + titleStr;
+            hackerLootTitle.className = `font-bold mb-1 border-b pb-1 ${isSuccess ? 'text-red-500 border-red-800' : 'text-gray-400 border-gray-600'}`;
+            
+            hackerLootData.textContent = data;
+            hackerLootData.className = `break-words font-mono mt-1 ${isSuccess ? 'text-red-400' : 'text-gray-500 blur-[2px]'}`;
+
+            // Reset trạng thái nút bấm
+            btnHackerAttack.disabled = true;
+            btnHackerAttack.classList.add('opacity-50', 'cursor-not-allowed');
+            hackerBadge.classList.add('hidden');
+            hackerStatusText.innerHTML = 'Đã dùng xong gói tin. Cần bắt gói mới.';
+        }
+
+        function visualizeError(element) {
+            element.classList.add('animate-[shake_0.5s_ease-in-out]');
+            setTimeout(() => element.classList.remove('animate-[shake_0.5s_ease-in-out]'), 500);
+        }
+
+        function simReset() {
+            printCLI(`sys> reset all`, 'normal');
+            state.ap.security = 'OPEN';
+            state.ap.password = '';
+            apPwdInput.value = '';
+            document.getElementById('client-password').value = '';
+            document.querySelectorAll('.packet').forEach(e => e.remove());
+            
+            actionSetSecurity('OPEN', false);
+            disconnectClient();
+            resetHackerState();
+            printCLI(`+ Đã khôi phục hệ thống về trạng thái gốc.`, 'success');
+        }
+
+        // --- CLI INPUT ---
+        cliInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                let val = this.value.trim();
+                if (!val) return;
+                
+                printCLI(`user@sys> ${val}`, 'normal');
+                this.value = '';
+                let parts = val.split(' ').filter(p => p);
+                let cmd = parts[0].toLowerCase();
+
+                if (cmd === 'ping') actionSendData(false);
+                else if (cmd === 'crack') actionHackerAttack(false);
+                else printCLI(`% Lệnh không hợp lệ. Gõ 'ping' hoặc 'crack'.`, 'error');
+            }
+        });
+
+        const style = document.createElement('style');
+        style.innerHTML = `
+            @keyframes shake {
+                0%, 100% { transform: translateX(0); }
+                25% { transform: translateX(-5px) rotate(-5deg); }
+                50% { transform: translateX(5px) rotate(5deg); }
+                75% { transform: translateX(-5px) rotate(-5deg); }
+            }
+        `;
+        document.head.appendChild(style);
+
+        window.onload = () => {
+            updateAPButtonsUI('OPEN');
+            printCLI(`* Hệ thống mô phỏng sẵn sàng.`, 'success');
+        };
+
+    </script>
+</body>
+</html>

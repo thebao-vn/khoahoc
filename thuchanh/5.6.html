@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>THE BÁO: 5.6 Các giao thức AAA (Authentication, Authorization, Accounting)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Custom scrollbar for console and topology */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb { background: #888; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #555; }
+        
+        /* Node pulsing animation */
+        @keyframes pulse-ring {
+            0% { transform: scale(0.8); box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.7); }
+            70% { transform: scale(1); box-shadow: 0 0 0 10px rgba(59, 130, 246, 0); }
+            100% { transform: scale(0.8); box-shadow: 0 0 0 0 rgba(59, 130, 246, 0); }
+        }
+        .active-node { animation: pulse-ring 2s infinite; }
+
+        /* Topology Connection Lines */
+        .topo-line {
+            position: absolute;
+            top: 50%;
+            height: 4px;
+            background-color: #cbd5e1;
+            z-index: 0;
+            transform: translateY(-50%);
+        }
+        
+        /* Packet Animation Base */
+        .packet {
+            position: absolute;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 20;
+            transition: left 1s linear, opacity 0.3s;
+            font-size: 1.5rem;
+            display: none;
+        }
+
+        /* Console styling */
+        .cli-input:focus { outline: none; }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen flex flex-col font-sans text-gray-800">
+
+    <!-- Sticky Header -->
+    <header class="sticky top-0 bg-slate-900 text-white p-4 shadow-lg z-50 border-b-4 border-blue-500">
+        <div class="max-w-7xl mx-auto flex flex-col sm:flex-row justify-between items-center gap-2">
+            <h1 class="text-xl md:text-2xl font-bold uppercase tracking-wide">
+                <span class="text-blue-400">THE BÁO:</span> 5.6 Các giao thức AAA (RADIUS/TACACS+)
+            </h1>
+            <span class="bg-blue-600 text-xs py-1 px-3 rounded-full font-semibold tracking-wider">MÔ PHỎNG TƯƠNG TÁC</span>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="flex-grow w-full max-w-7xl mx-auto p-4 md:p-6 flex flex-col gap-6">
+        
+        <!-- Topology Section -->
+        <section class="bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden flex flex-col">
+            <div class="bg-gray-50 border-b p-3 font-semibold text-gray-700 flex justify-between items-center">
+                <span>📍 Sơ đồ mạng (Topology)</span>
+                <span class="text-xs text-gray-500 font-normal hidden md:inline">Mô hình: Client -> NAS (Router) -> AAA Server</span>
+            </div>
+            
+            <!-- Mobile scrollable wrapper -->
+            <div class="overflow-auto h-[50vh] md:h-auto bg-slate-50 w-full relative touch-pan-x touch-pan-y" id="topology-container">
+                <!-- Fixed size inner area to prevent distortion -->
+                <div class="relative min-w-[700px] h-[350px] mx-auto">
+                    
+                    <!-- Lines -->
+                    <div class="topo-line" style="left: 15%; right: 50%;"></div>
+                    <div class="topo-line" style="left: 50%; right: 15%;"></div>
+
+                    <!-- Nodes -->
+                    <!-- PC -->
+                    <div class="absolute top-1/2 left-[15%] transform -translate-x-1/2 -translate-y-1/2 flex flex-col items-center z-10">
+                        <div id="node-pc" class="w-16 h-16 bg-white border-4 border-gray-400 rounded-lg flex items-center justify-center text-3xl shadow-sm transition-colors">💻</div>
+                        <span class="mt-2 font-bold text-sm text-gray-700">Remote User</span>
+                        <span class="text-xs text-gray-500">192.168.1.10</span>
+                    </div>
+
+                    <!-- NAS Router -->
+                    <div class="absolute top-1/2 left-[50%] transform -translate-x-1/2 -translate-y-1/2 flex flex-col items-center z-10">
+                        <div id="node-router" class="w-20 h-20 bg-white border-4 border-blue-500 rounded-full flex items-center justify-center text-4xl shadow-md transition-all">📟</div>
+                        <span class="mt-2 font-bold text-sm text-gray-700">NAS (Router)</span>
+                        <span class="text-xs text-gray-500">Gateway</span>
+                        <div id="router-status" class="mt-1 text-[10px] font-mono bg-gray-200 px-2 py-0.5 rounded text-gray-600">AAA: OFF</div>
+                    </div>
+
+                    <!-- AAA Server -->
+                    <div class="absolute top-1/2 left-[85%] transform -translate-x-1/2 -translate-y-1/2 flex flex-col items-center z-10">
+                        <div id="node-server" class="w-16 h-20 bg-white border-4 border-purple-500 rounded-md flex items-center justify-center text-4xl shadow-md transition-all">🗄️</div>
+                        <span class="mt-2 font-bold text-sm text-gray-700">AAA Server</span>
+                        <span class="text-xs text-gray-500">10.0.0.100</span>
+                    </div>
+
+                    <!-- Animated Packets -->
+                    <div id="packet-auth" class="packet">🔑</div>
+                    <div id="packet-radius" class="packet">📨</div>
+                    <div id="packet-reply" class="packet">✅</div>
+
+                </div>
+            </div>
+            <div class="p-3 bg-blue-50 text-sm text-blue-800 border-t border-blue-100 flex gap-2">
+                <span>💡</span> 
+                <p id="system-hint">Bắt đầu bằng việc bật mô hình AAA trên Router, sau đó chỉ định Server và áp dụng rule đăng nhập.</p>
+            </div>
+        </section>
+
+        <!-- Controls and Console Layout -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            
+            <!-- Control Panel -->
+            <section class="bg-white rounded-xl shadow-md border border-gray-200 flex flex-col">
+                <div class="bg-gray-50 border-b p-3 font-semibold text-gray-700">
+                    🎛️ Bảng điều khiển (Tự động sinh lệnh)
+                </div>
+                <div class="p-4 flex flex-col gap-4">
+                    <p class="text-sm text-gray-600 mb-2">Sử dụng các nút bên dưới để cấu hình nhanh. Các lệnh tương ứng sẽ xuất hiện ở màn hình Console.</p>
+                    
+                    <div class="space-y-3">
+                        <h3 class="text-xs font-bold uppercase text-gray-500">1. Kích hoạt AAA</h3>
+                        <button onclick="executeAction('aaa new-model')" class="w-full text-left px-4 py-2 bg-blue-100 hover:bg-blue-200 text-blue-800 rounded border border-blue-300 transition shadow-sm font-mono text-sm">
+                            ▶ aaa new-model
+                        </button>
+
+                        <h3 class="text-xs font-bold uppercase text-gray-500 pt-2">2. Cấu hình Server</h3>
+                        <div class="flex gap-2">
+                            <button onclick="executeAction('radius server 10.0.0.100')" class="flex-1 text-left px-4 py-2 bg-purple-100 hover:bg-purple-200 text-purple-800 rounded border border-purple-300 transition shadow-sm font-mono text-sm">
+                                ▶ radius server 10...
+                            </button>
+                            <button onclick="executeAction('tacacs server 10.0.0.100')" class="flex-1 text-left px-4 py-2 bg-indigo-100 hover:bg-indigo-200 text-indigo-800 rounded border border-indigo-300 transition shadow-sm font-mono text-sm">
+                                ▶ tacacs server 10...
+                            </button>
+                        </div>
+
+                        <h3 class="text-xs font-bold uppercase text-gray-500 pt-2">3. Áp dụng xác thực (Authentication)</h3>
+                        <button onclick="executeAction('aaa authentication login default group radius')" class="w-full text-left px-4 py-2 bg-emerald-100 hover:bg-emerald-200 text-emerald-800 rounded border border-emerald-300 transition shadow-sm font-mono text-sm overflow-hidden text-ellipsis whitespace-nowrap">
+                            ▶ aaa auth login default group radius
+                        </button>
+                    </div>
+
+                    <hr class="my-2 border-gray-200">
+
+                    <div class="space-y-3">
+                        <h3 class="text-xs font-bold uppercase text-gray-500">4. Mô phỏng hành vi</h3>
+                        <button onclick="simulateUserLogin()" class="w-full flex items-center justify-center gap-2 px-4 py-3 bg-slate-800 hover:bg-slate-700 text-white rounded shadow-md font-bold transition">
+                            <span>💻</span> User tiến hành Đăng nhập (Login)
+                        </button>
+                        
+                        <button onclick="executeAction('reset')" class="w-full px-4 py-2 bg-red-100 hover:bg-red-200 text-red-700 rounded border border-red-300 transition shadow-sm text-sm font-semibold mt-2">
+                            🔄 Reset cấu hình mạng
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Console CLI -->
+            <section class="bg-[#1e1e1e] rounded-xl shadow-md border border-gray-800 flex flex-col overflow-hidden relative">
+                <div class="bg-gray-800 border-b border-gray-700 p-2 px-4 text-gray-300 text-sm font-mono flex justify-between items-center">
+                    <span>Terminal - Router(config)#</span>
+                    <div class="flex gap-1.5">
+                        <div class="w-3 h-3 rounded-full bg-red-500"></div>
+                        <div class="w-3 h-3 rounded-full bg-yellow-500"></div>
+                        <div class="w-3 h-3 rounded-full bg-green-500"></div>
+                    </div>
+                </div>
+                
+                <div id="cli-output" class="p-4 flex-grow h-[350px] overflow-y-auto font-mono text-sm text-green-400 space-y-1">
+                    <div class="text-gray-400">System bootstrap complete...</div>
+                    <div class="text-gray-400">Press RETURN to get started.</div>
+                    <br>
+                    <div>Router> enable</div>
+                    <div>Router# configure terminal</div>
+                    <div>Enter configuration commands, one per line. End with CNTL/Z.</div>
+                </div>
+
+                <div class="p-3 border-t border-gray-700 bg-[#1e1e1e] flex font-mono text-sm">
+                    <span id="cli-prompt" class="text-green-400 mr-2">Router(config)#</span>
+                    <input type="text" id="cli-input" class="cli-input bg-transparent text-white flex-grow" autocomplete="off" spellcheck="false" placeholder="Gõ lệnh tại đây...">
+                </div>
+            </section>
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="bg-black text-gray-400 text-center p-6 mt-auto border-t border-gray-800">
+        <div class="max-w-7xl mx-auto flex flex-col items-center justify-center gap-2">
+            <p class="text-sm">Cảm ơn bạn đã tham gia khoá học, bạn có thể để lại góp ý để ad sửa thêm. Xin cảm ơn.</p>
+            <p class="font-bold text-white tracking-widest uppercase">Thiết kế bởi THE BÁO</p>
+        </div>
+    </footer>
+
+    <!-- JavaScript Logic -->
+    <script>
+        // --- State Management ---
+        let networkState = {
+            aaaEnabled: false,
+            serverConfigured: null, // 'radius' or 'tacacs'
+            authApplied: false
+        };
+
+        let isAnimating = false;
+
+        // --- DOM Elements ---
+        const cliOutput = document.getElementById('cli-output');
+        const cliInput = document.getElementById('cli-input');
+        const routerStatus = document.getElementById('router-status');
+        const systemHint = document.getElementById('system-hint');
+        
+        // Packets
+        const pktAuth = document.getElementById('packet-auth');
+        const pktRadius = document.getElementById('packet-radius');
+        const pktReply = document.getElementById('packet-reply');
+
+        const leftPos = { pc: '15%', router: '50%', server: '85%' };
+
+        // --- Console Logic ---
+        function printToConsole(text, type = 'normal') {
+            const div = document.createElement('div');
+            if (type === 'cmd') {
+                div.innerHTML = `<span class="text-white">Router(config)# ${text}</span>`;
+            } else if (type === 'error') {
+                div.className = 'text-red-400';
+                div.innerText = text;
+            } else if (type === 'sys') {
+                div.className = 'text-yellow-400 italic';
+                div.innerText = text;
+            } else {
+                div.innerText = text;
+            }
+            cliOutput.appendChild(div);
+            cliOutput.scrollTop = cliOutput.scrollHeight;
+        }
+
+        cliInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                const cmd = this.value.trim();
+                if (cmd) {
+                    executeAction(cmd, true);
+                    this.value = '';
+                }
+            }
+        });
+
+        // --- Command Execution & Core Logic ---
+        function executeAction(cmd, fromManualInput = false) {
+            if (isAnimating) {
+                if(!fromManualInput) printToConsole("% Hệ thống đang bận xử lý tiến trình mạng...", "error");
+                return;
+            }
+
+            const command = cmd.toLowerCase().trim();
+            if (command !== 'reset' && !fromManualInput) {
+                printToConsole(cmd, 'cmd');
+            } else if (fromManualInput) {
+                 printToConsole(cmd, 'cmd');
+            }
+
+            if (command === 'aaa new-model') {
+                networkState.aaaEnabled = true;
+                updateVisuals();
+                printToConsole("% Đã kích hoạt mô hình AAA.", "sys");
+                updateHint("Tuyệt! AAA đã bật. Giờ hãy trỏ đến máy chủ RADIUS hoặc TACACS+.");
+            } 
+            else if (command.startsWith('radius server')) {
+                if (!networkState.aaaEnabled) {
+                    printToConsole("% LỖI: Vui lòng bật 'aaa new-model' trước khi cấu hình server.", "error");
+                    visualizeError('router');
+                } else {
+                    networkState.serverConfigured = 'radius';
+                    updateVisuals();
+                    printToConsole("% Đã cấu hình RADIUS Server.", "sys");
+                    updateHint("Đã có Server! Giờ hãy tạo rule để bắt User phải xác thực qua RADIUS.");
+                }
+            }
+            else if (command.startsWith('tacacs server')) {
+                 if (!networkState.aaaEnabled) {
+                    printToConsole("% LỖI: Vui lòng bật 'aaa new-model' trước khi cấu hình server.", "error");
+                    visualizeError('router');
+                } else {
+                    networkState.serverConfigured = 'tacacs';
+                    updateVisuals();
+                    printToConsole("% Đã cấu hình TACACS+ Server.", "sys");
+                    updateHint("Đã có Server! Giờ hãy tạo rule để bắt User phải xác thực qua TACACS+.");
+                }
+            }
+            else if (command.startsWith('aaa authentication login')) {
+                if (!networkState.aaaEnabled) {
+                    printToConsole("% LỖI: AAA chưa được kích hoạt.", "error");
+                    visualizeError('router');
+                } else if (!networkState.serverConfigured) {
+                    printToConsole("% CẢNH BÁO: Chưa cấu hình Server, Router sẽ chặn truy cập nếu áp dụng rule này.", "error");
+                    networkState.authApplied = true; // Still apply it to show consequences
+                    updateVisuals();
+                } else {
+                    networkState.authApplied = true;
+                    updateVisuals();
+                    printToConsole("% Đã áp dụng danh sách xác thực cho User đăng nhập.", "sys");
+                    updateHint("Cấu hình hoàn tất! Nhấn nút 'User tiến hành Đăng nhập' để xem cơ chế hoạt động.");
+                }
+            }
+            else if (command === 'reset') {
+                networkState = { aaaEnabled: false, serverConfigured: null, authApplied: false };
+                updateVisuals();
+                cliOutput.innerHTML = '';
+                printToConsole("System bootstrap complete...", "normal");
+                printToConsole("% Cấu hình đã được khôi phục về mặc định.", "sys");
+                updateHint("Bắt đầu bằng việc bật mô hình AAA trên Router.");
+            }
+            else if (command === 'clear') {
+                cliOutput.innerHTML = '';
+            }
+            else {
+                printToConsole("% Invalid input detected at '^' marker.", "error");
+                visualizeError('router');
+            }
+        }
+
+        // --- Animations & Visuals ---
+        function updateVisuals() {
+            // Update Router Status Badge
+            if (networkState.aaaEnabled) {
+                routerStatus.innerText = "AAA: ON";
+                routerStatus.className = "mt-1 text-[10px] font-mono bg-green-200 px-2 py-0.5 rounded text-green-800 font-bold border border-green-400";
+                document.getElementById('node-router').classList.add('border-green-500');
+                document.getElementById('node-router').classList.remove('border-blue-500', 'border-red-500');
+            } else {
+                routerStatus.innerText = "AAA: OFF";
+                routerStatus.className = "mt-1 text-[10px] font-mono bg-gray-200 px-2 py-0.5 rounded text-gray-600";
+                document.getElementById('node-router').classList.add('border-blue-500');
+                document.getElementById('node-router').classList.remove('border-green-500', 'border-red-500');
+            }
+
+            // Update Server Status
+            if (networkState.serverConfigured === 'radius') {
+                document.getElementById('node-server').classList.add('bg-purple-100', 'border-purple-600');
+            } else if (networkState.serverConfigured === 'tacacs') {
+                document.getElementById('node-server').classList.add('bg-indigo-100', 'border-indigo-600');
+            } else {
+                document.getElementById('node-server').className = "w-16 h-20 bg-white border-4 border-gray-300 rounded-md flex items-center justify-center text-4xl shadow-md transition-all";
+            }
+        }
+
+        function updateHint(text) {
+            systemHint.innerHTML = text;
+        }
+
+        function visualizeError(nodeId) {
+            const node = document.getElementById(`node-${nodeId}`);
+            node.style.transform = "rotate(10deg)";
+            node.classList.add('border-red-500');
+            setTimeout(() => {
+                node.style.transform = "rotate(-10deg)";
+                setTimeout(() => {
+                    node.style.transform = "rotate(0deg)";
+                    updateVisuals(); // restore borders
+                }, 100);
+            }, 100);
+        }
+
+        function resetPacket(pkt, position) {
+            pkt.style.transition = 'none';
+            pkt.style.left = leftPos[position];
+            pkt.style.display = 'none';
+            pkt.style.opacity = '1';
+            // force reflow
+            void pkt.offsetWidth; 
+            pkt.style.transition = 'left 1s linear, opacity 0.3s';
+        }
+
+        // The core simulation flow
+        function simulateUserLogin() {
+            if (isAnimating) return;
+            isAnimating = true;
+            printToConsole("--- BẮT ĐẦU MÔ PHỎNG ĐĂNG NHẬP ---", "sys");
+            document.getElementById('node-pc').classList.add('active-node');
+
+            // 1. PC sends Auth request to Router
+            printToConsole("[PC] Gửi thông tin đăng nhập (Username/Password) tới Router...", "normal");
+            resetPacket(pktAuth, 'pc');
+            pktAuth.innerText = '🔑';
+            pktAuth.style.display = 'block';
+            pktAuth.style.left = leftPos['router'];
+
+            setTimeout(() => {
+                pktAuth.style.display = 'none';
+                document.getElementById('node-pc').classList.remove('active-node');
+                document.getElementById('node-router').classList.add('active-node');
+
+                // 2. Router Process
+                if (!networkState.aaaEnabled) {
+                    printToConsole("[Router] AAA đang tắt. Router dùng Local Database nội bộ để xác thực (Không an toàn cao).", "sys");
+                    finishLogin(true, "Truy cập thành công qua Local Auth.");
+                    return;
+                }
+
+                if (!networkState.authApplied) {
+                    printToConsole("[Router] LỖI: AAA bật nhưng chưa có Group Rule nào được cấu hình!", "error");
+                    visualizeError('router');
+                    finishLogin(false, "Truy cập bị từ chối do thiếu cấu hình Authentication List.");
+                    return;
+                }
+
+                if (!networkState.serverConfigured) {
+                     printToConsole("[Router] LỖI: Router cố gắng liên hệ Server nhưng chưa cấu hình IP Server!", "error");
+                     visualizeError('router');
+                     finishLogin(false, "Truy cập bị từ chối (Server Unreachable).");
+                     return;
+                }
+
+                // 3. Router wraps credential into AAA packet and sends to Server
+                let protocolName = networkState.serverConfigured.toUpperCase();
+                printToConsole(`[Router] Đóng gói thông tin vào bản tin ${protocolName} (Access-Request) gửi tới Server...`, "normal");
+                
+                resetPacket(pktRadius, 'router');
+                pktRadius.innerText = protocolName === 'RADIUS' ? '📨' : '🔐'; // TACACS encrypts entire payload
+                pktRadius.style.display = 'block';
+                pktRadius.style.left = leftPos['server'];
+
+                setTimeout(() => {
+                    pktRadius.style.display = 'none';
+                    document.getElementById('node-router').classList.remove('active-node');
+                    document.getElementById('node-server').classList.add('active-node');
+
+                    // 4. Server Processes and Replies
+                    printToConsole(`[Server] Đang kiểm tra Database... Hợp lệ! Gửi ${protocolName} Accept về Router.`, "normal");
+                    
+                    resetPacket(pktReply, 'server');
+                    pktReply.innerText = '✅';
+                    pktReply.style.display = 'block';
+                    pktReply.style.left = leftPos['router'];
+
+                    setTimeout(() => {
+                        pktReply.style.display = 'none';
+                        document.getElementById('node-server').classList.remove('active-node');
+                        document.getElementById('node-router').classList.add('active-node');
+
+                        // 5. Router grants access to PC
+                        printToConsole("[Router] Nhận phản hồi từ Server. Mở cổng cho User.", "sys");
+                        
+                        resetPacket(pktReply, 'router');
+                        pktReply.innerText = '🔓';
+                        pktReply.style.display = 'block';
+                        pktReply.style.left = leftPos['pc'];
+
+                        setTimeout(() => {
+                             pktReply.style.display = 'none';
+                             finishLogin(true, "XÁC THỰC THÀNH CÔNG thông qua AAA Server!");
+                        }, 1000);
+
+                    }, 1000);
+
+                }, 1000);
+
+            }, 1000);
+        }
+
+        function finishLogin(success, message) {
+            document.getElementById('node-router').classList.remove('active-node');
+            document.getElementById('node-server').classList.remove('active-node');
+            document.getElementById('node-pc').classList.remove('active-node');
+            
+            if(success) {
+                printToConsole(`% KẾT QUẢ: ${message}`, "sys");
+                document.getElementById('node-pc').style.backgroundColor = '#dcfce7'; // green-100
+                setTimeout(() => { document.getElementById('node-pc').style.backgroundColor = 'white'; }, 2000);
+            } else {
+                printToConsole(`% KẾT QUẢ: ${message}`, "error");
+                document.getElementById('node-pc').style.backgroundColor = '#fee2e2'; // red-100
+                setTimeout(() => { document.getElementById('node-pc').style.backgroundColor = 'white'; }, 2000);
+            }
+            
+            printToConsole("--- KẾT THÚC MÔ PHỎNG ---", "sys");
+            isAnimating = false;
+        }
+
+    </script>
+</body>
+</html>

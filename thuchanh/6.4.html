@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>THE BÁO: Phần 6.4 - Đọc và hiểu định dạng dữ liệu JSON</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    
+    <style>
+        /* Custom Scrollbar cho Terminal */
+        .cli-scrollbar::-webkit-scrollbar {
+            width: 8px;
+        }
+        .cli-scrollbar::-webkit-scrollbar-track {
+            background: #111827; /* gray-900 */
+        }
+        .cli-scrollbar::-webkit-scrollbar-thumb {
+            background: #374151; /* gray-700 */
+            border-radius: 4px;
+        }
+        .cli-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: #4B5563; /* gray-600 */
+        }
+
+        /* Animations */
+        @keyframes float {
+            0% { transform: translateY(0px); }
+            50% { transform: translateY(-8px); }
+            100% { transform: translateY(0px); }
+        }
+        .animate-float {
+            animation: float 3s ease-in-out infinite;
+        }
+
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            10%, 30%, 50%, 70%, 90% { transform: translateX(-5px); }
+            20%, 40%, 60%, 80% { transform: translateX(5px); }
+        }
+        .animate-shake {
+            animation: shake 0.5s;
+        }
+
+        /* Packet Animations */
+        .packet {
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+            opacity: 0;
+            pointer-events: none;
+            transition: none;
+        }
+
+        @keyframes moveRight {
+            0% { left: 15%; opacity: 0; }
+            10% { opacity: 1; }
+            90% { opacity: 1; }
+            100% { left: 80%; opacity: 0; }
+        }
+        .animate-move-right {
+            animation: moveRight 1.5s linear forwards;
+        }
+
+        @keyframes moveLeft {
+            0% { left: 80%; opacity: 0; }
+            10% { opacity: 1; }
+            90% { opacity: 1; }
+            100% { left: 15%; opacity: 0; }
+        }
+        .animate-move-left {
+            animation: moveLeft 1.5s linear forwards;
+        }
+        
+        /* Topology Container Scroll config */
+        .topo-scroll-container {
+            -webkit-overflow-scrolling: touch;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen flex flex-col font-sans text-gray-800 selection:bg-blue-300">
+
+    <!-- Sticky Header -->
+    <header class="sticky top-0 z-50 bg-slate-900 text-white shadow-lg border-b-4 border-blue-500">
+        <div class="container mx-auto px-4 py-3 flex justify-between items-center">
+            <div>
+                <h1 class="text-xl md:text-2xl font-black tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-cyan-300">
+                    THE BÁO: 6.4
+                </h1>
+                <p class="text-xs md:text-sm text-slate-300 font-medium">Tự động hóa & Lập trình mạng - Đọc hiểu JSON</p>
+            </div>
+            <div class="hidden sm:flex items-center space-x-2 bg-slate-800 py-1 px-3 rounded-full text-xs text-blue-300 font-mono border border-slate-700">
+                <i data-lucide="activity" class="w-4 h-4"></i>
+                <span>Simulator Active</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="flex-grow container mx-auto px-4 py-6 flex flex-col gap-6">
+
+        <!-- Info / Tip Banner -->
+        <div class="bg-blue-50 border-l-4 border-blue-500 p-4 rounded-r shadow-sm flex items-start space-x-3">
+            <i data-lucide="info" class="w-6 h-6 text-blue-600 flex-shrink-0 mt-0.5"></i>
+            <div>
+                <h3 class="font-bold text-blue-800">Tình huống giả lập</h3>
+                <p class="text-sm text-blue-900 mt-1">SDN Controller đang dùng API (RESTCONF) để giao tiếp với Router. Dữ liệu truyền tải được đóng gói bằng định dạng <strong>JSON</strong>. Hãy thử gửi cấu hình đúng/sai để quan sát cách hệ thống xử lý.</p>
+            </div>
+        </div>
+
+        <!-- 1. Sơ đồ mô phỏng (Topology) -->
+        <section class="bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden flex flex-col">
+            <div class="bg-slate-100 px-4 py-2 border-b border-gray-200 flex justify-between items-center">
+                <span class="font-bold text-slate-700 flex items-center">
+                    <i data-lucide="network" class="w-5 h-5 mr-2 text-blue-600"></i> Network Topology Diagram
+                </span>
+                <span class="text-xs text-gray-500 bg-white px-2 py-1 rounded border">Kéo/Vuốt để xem (Mobile)</span>
+            </div>
+            
+            <!-- Vùng cuộn cho sơ đồ -->
+            <div class="topo-scroll-container w-full h-[50vh] md:h-[400px] overflow-auto bg-slate-900 relative shadow-inner touch-pan-x touch-pan-y cursor-grab active:cursor-grabbing" id="topo-container">
+                <!-- Nội dung sơ đồ fix cứng kích thước để không móp méo -->
+                <div class="min-w-[800px] min-h-[350px] h-full w-full relative flex items-center justify-between px-[15%]">
+                    
+                    <!-- Background Grid Pattern -->
+                    <div class="absolute inset-0 opacity-10 pointer-events-none" style="background-image: radial-gradient(#fff 1px, transparent 1px); background-size: 20px 20px;"></div>
+
+                    <!-- Connection Line -->
+                    <svg class="absolute inset-0 w-full h-full pointer-events-none z-0">
+                        <line x1="25%" y1="50%" x2="75%" y2="50%" stroke="#475569" stroke-width="4" stroke-dasharray="8" class="animate-pulse" />
+                        <text x="50%" y="45%" fill="#94A3B8" font-size="12" text-anchor="middle" font-family="monospace">REST API (HTTP)</text>
+                    </svg>
+
+                    <!-- SDN Controller Node -->
+                    <div class="z-10 flex flex-col items-center animate-float">
+                        <div class="bg-blue-600 p-5 rounded-2xl shadow-[0_0_20px_rgba(37,99,235,0.4)] border-2 border-blue-400 relative">
+                            <i data-lucide="monitor-play" class="w-12 h-12 text-white"></i>
+                            <div class="absolute -top-2 -right-2 w-4 h-4 bg-green-400 rounded-full animate-ping"></div>
+                            <div class="absolute -top-2 -right-2 w-4 h-4 bg-green-500 rounded-full border-2 border-slate-900"></div>
+                        </div>
+                        <div class="mt-4 bg-slate-800 text-white text-xs font-bold px-3 py-1.5 rounded-md border border-slate-700 text-center shadow-lg">
+                            <div>SDN Controller</div>
+                            <div class="text-blue-300 font-mono font-normal mt-0.5">10.0.0.100</div>
+                        </div>
+                    </div>
+
+                    <!-- Animated Packets -->
+                    <!-- Valid JSON Packet -->
+                    <div id="packet-valid" class="packet z-20">
+                        <div class="bg-yellow-400 text-yellow-900 px-3 py-2 rounded-lg shadow-lg flex items-center border-2 border-yellow-500 transform scale-110">
+                            <i data-lucide="file-json-2" class="w-6 h-6 mr-1"></i>
+                            <span class="font-bold text-xs tracking-wider">JSON DATA</span>
+                        </div>
+                    </div>
+
+                    <!-- Invalid/Error Packet -->
+                    <div id="packet-error" class="packet z-20">
+                        <div class="bg-red-500 text-white px-3 py-2 rounded-lg shadow-lg flex items-center border-2 border-red-700 transform scale-110">
+                            <i data-lucide="mail-warning" class="w-6 h-6 mr-1"></i>
+                            <span class="font-bold text-xs tracking-wider">ERROR!</span>
+                        </div>
+                    </div>
+
+                    <!-- Router Node -->
+                    <div class="z-10 flex flex-col items-center animate-float" style="animation-delay: 1.5s;">
+                        <div id="router-device" class="bg-slate-700 p-5 rounded-full shadow-xl border-4 border-slate-500 transition-colors duration-300 relative">
+                            <i data-lucide="router" class="w-12 h-12 text-white"></i>
+                        </div>
+                        <div id="router-label" class="mt-4 bg-slate-800 text-white text-xs font-bold px-3 py-1.5 rounded-md border border-slate-700 text-center shadow-lg transition-colors duration-300">
+                            <div>Core Router</div>
+                            <div class="text-blue-300 font-mono font-normal mt-0.5">10.0.0.1</div>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+        </section>
+
+        <!-- 2. Bảng điều khiển & CLI -->
+        <section class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            
+            <!-- Control Panel (Left/Top) -->
+            <div class="lg:col-span-5 bg-white rounded-xl shadow-md border border-gray-200 p-5 flex flex-col space-y-5">
+                <h2 class="text-lg font-bold border-b pb-2 flex items-center text-slate-800">
+                    <i data-lucide="sliders-horizontal" class="mr-2 text-blue-600 w-5 h-5"></i> Bảng Điều Khiển Nhanh
+                </h2>
+
+                <!-- Lỗi cố ý Switch -->
+                <div class="bg-slate-50 p-4 rounded-lg border border-slate-200 flex items-center justify-between">
+                    <div>
+                        <h4 class="font-bold text-sm text-slate-700">Dữ liệu JSON Gửi đi:</h4>
+                        <p id="json-status-text" class="text-xs text-green-600 font-bold mt-1 uppercase tracking-wide">Chuẩn cú pháp (Valid)</p>
+                    </div>
+                    <!-- Toggle Switch -->
+                    <label class="relative inline-flex items-center cursor-pointer">
+                        <input type="checkbox" id="json-syntax-toggle" class="sr-only peer" onchange="toggleJsonSyntax()">
+                        <div class="w-14 h-7 bg-green-500 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-red-500 shadow-inner"></div>
+                    </label>
+                </div>
+
+                <!-- Action Buttons -->
+                <div class="grid grid-cols-2 gap-3">
+                    <button onclick="actionGet()" class="flex flex-col items-center justify-center p-3 bg-blue-50 text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-100 hover:shadow transform active:scale-95 transition-all">
+                        <i data-lucide="download-cloud" class="w-6 h-6 mb-1"></i>
+                        <span class="font-bold text-sm">GET (Lấy Data)</span>
+                    </button>
+                    <button onclick="actionPost()" class="flex flex-col items-center justify-center p-3 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-lg hover:bg-indigo-100 hover:shadow transform active:scale-95 transition-all">
+                        <i data-lucide="upload-cloud" class="w-6 h-6 mb-1"></i>
+                        <span class="font-bold text-sm">POST (Gửi Cấu hình)</span>
+                    </button>
+                </div>
+
+                <div class="flex-grow"></div> <!-- Spacer -->
+
+                <!-- Reset Button -->
+                <button onclick="resetSimulation()" class="w-full flex items-center justify-center p-3 bg-slate-800 text-white rounded-lg hover:bg-slate-900 transform active:scale-95 transition-all shadow-md font-bold">
+                    <i data-lucide="refresh-cw" class="w-4 h-4 mr-2"></i> RESET MÔ PHỎNG & CLI
+                </button>
+            </div>
+
+            <!-- CLI Console (Right/Bottom) -->
+            <div class="lg:col-span-7 bg-[#0D1117] rounded-xl shadow-xl border border-gray-800 flex flex-col overflow-hidden h-[400px]">
+                <!-- Terminal Header -->
+                <div class="bg-[#161B22] px-4 py-2 border-b border-gray-700 flex justify-between items-center">
+                    <div class="flex space-x-2">
+                        <div class="w-3 h-3 rounded-full bg-red-500"></div>
+                        <div class="w-3 h-3 rounded-full bg-yellow-500"></div>
+                        <div class="w-3 h-3 rounded-full bg-green-500"></div>
+                    </div>
+                    <span class="text-xs text-gray-400 font-mono uppercase tracking-widest flex items-center">
+                        <i data-lucide="terminal" class="w-3 h-3 mr-1"></i> Admin Console
+                    </span>
+                </div>
+
+                <!-- Terminal Output -->
+                <div id="cli-output" class="flex-grow p-4 overflow-y-auto cli-scrollbar font-mono text-sm leading-relaxed whitespace-pre-wrap">
+                    <!-- Logs will appear here -->
+                </div>
+
+                <!-- Terminal Input -->
+                <div class="bg-[#161B22] p-2 border-t border-gray-700 flex items-center px-4">
+                    <span class="text-green-400 font-mono mr-2 font-bold">controller@sdn:~$</span>
+                    <input type="text" id="cli-input" class="bg-transparent border-none outline-none text-gray-200 font-mono w-full focus:ring-0 text-sm" placeholder="Gõ lệnh (vd: get, post, clear, help)..." autocomplete="off" onkeypress="handleEnter(event)">
+                </div>
+            </div>
+        </section>
+
+        <!-- JSON Structure Explaination -->
+        <section class="bg-white rounded-xl shadow-md border border-gray-200 p-5 mb-6">
+            <h2 class="text-lg font-bold border-b pb-2 mb-4 flex items-center text-slate-800">
+                <i data-lucide="book-open" class="mr-2 text-purple-600 w-5 h-5"></i> Cấu trúc cơ bản của JSON (Kiến thức 6.4)
+            </h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div class="bg-slate-900 rounded-lg p-4 font-mono text-sm overflow-x-auto text-gray-300">
+<span class="text-yellow-300">{</span>
+  <span class="text-blue-300">"interface"</span><span class="text-gray-400">:</span> <span class="text-purple-300">{</span>
+    <span class="text-blue-300">"name"</span><span class="text-gray-400">:</span> <span class="text-green-300">"GigabitEthernet1"</span><span class="text-gray-400">,</span>
+    <span class="text-blue-300">"description"</span><span class="text-gray-400">:</span> <span class="text-green-300">"Uplink"</span><span class="text-gray-400">,</span>
+    <span class="text-blue-300">"enabled"</span><span class="text-gray-400">:</span> <span class="text-orange-300">true</span><span class="text-gray-400">,</span>
+    <span class="text-blue-300">"ip_addresses"</span><span class="text-gray-400">:</span> <span class="text-yellow-300">[</span>
+      <span class="text-green-300">"10.0.0.1"</span><span class="text-gray-400">,</span> <span class="text-green-300">"192.168.1.1"</span>
+    <span class="text-yellow-300">]</span>
+  <span class="text-purple-300">}</span>
+<span class="text-yellow-300">}</span>
+                </div>
+                <div class="flex flex-col justify-center space-y-3 text-sm text-gray-700">
+                    <p><strong class="bg-yellow-200 px-1 rounded">Dấu ngoặc nhọn { }</strong> đại diện cho một <b>Object (Đối tượng)</b>.</p>
+                    <p><strong class="bg-yellow-200 px-1 rounded">Dấu ngoặc vuông [ ]</strong> đại diện cho một <b>Array (Mảng / Danh sách)</b>.</p>
+                    <p>Dữ liệu được tổ chức theo cặp <strong class="text-blue-600">"Key"</strong> : <strong class="text-green-600">"Value"</strong>.</p>
+                    <p class="text-red-600 font-semibold italic mt-2"><i data-lucide="alert-triangle" class="inline w-4 h-4 mb-1"></i> Lỗi phổ biến: Quên ngoặc kép ở Key, dư dấu phẩy (,) ở phần tử cuối cùng, hoặc thiếu ngoặc đóng.</p>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="bg-[#0f172a] text-slate-400 py-6 border-t-4 border-blue-600 mt-auto">
+        <div class="container mx-auto px-4 flex flex-col items-center justify-center">
+            <div class="flex items-center space-x-2 mb-2">
+                <i data-lucide="code-2" class="w-5 h-5 text-blue-500"></i>
+                <span class="font-black text-white tracking-widest uppercase">THE BÁO</span>
+            </div>
+            <p class="text-xs text-center">Tài liệu tương tác hỗ trợ học tập CCNA - Môn Mạng Máy Tính<br></p>
+            <div class="mt-4 pt-4 border-t border-slate-700 w-full max-w-sm text-center">
+                <p class="text-xs font-bold text-slate-500 uppercase tracking-widest">Thiết kế bởi "THE BÁO"</p>
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        // Khởi tạo icons
+        lucide.createIcons();
+
+        // Trạng thái hệ thống
+        let isJsonValid = true;
+        let isAnimating = false;
+
+        // Các Elements
+        const cliOutput = document.getElementById('cli-output');
+        const cliInput = document.getElementById('cli-input');
+        const jsonToggle = document.getElementById('json-syntax-toggle');
+        const jsonStatusText = document.getElementById('json-status-text');
+        
+        const packetValid = document.getElementById('packet-valid');
+        const packetError = document.getElementById('packet-error');
+        const routerDevice = document.getElementById('router-device');
+        const routerLabel = document.getElementById('router-label');
+
+        // Hàm in ra Terminal (CLI)
+        function printCli(text, type = 'normal') {
+            const line = document.createElement('div');
+            line.className = 'mb-1 leading-tight';
+            
+            const time = new Date().toLocaleTimeString('en-US', { hour12: false, hour: "numeric", minute: "numeric", second: "numeric" });
+            const timeSpan = `<span class="text-gray-500">[${time}]</span>`;
+
+            let content = '';
+            switch(type) {
+                case 'cmd':
+                    content = `<span class="text-blue-400 font-bold">$ ${text}</span>`;
+                    break;
+                case 'info':
+                    content = `<span class="text-gray-300">${text}</span>`;
+                    break;
+                case 'success':
+                    content = `<span class="text-green-400 font-bold">✓ ${text}</span>`;
+                    break;
+                case 'error':
+                    content = `<span class="text-red-500 font-bold bg-red-900 bg-opacity-20 px-1 rounded">✗ ERRROR: ${text}</span>`;
+                    break;
+                case 'json':
+                    content = `<div class="text-yellow-300 pl-4 py-2 border-l-2 border-slate-700 my-1 bg-slate-800 bg-opacity-50 rounded">${text}</div>`;
+                    break;
+                default:
+                    content = `<span class="text-gray-200">${text}</span>`;
+            }
+
+            line.innerHTML = `${timeSpan} ${content}`;
+            cliOutput.appendChild(line);
+            cliOutput.scrollTop = cliOutput.scrollHeight; // Auto cuộn xuống đáy
+        }
+
+        // Khởi tạo Terminal
+        function initTerminal() {
+            cliOutput.innerHTML = '';
+            printCli('Hệ thống SDN Controller khởi động...', 'info');
+            printCli('Đang tải module RESTCONF... OK', 'info');
+            printCli('Sẵn sàng gửi cấu hình JSON tới 10.0.0.1.', 'info');
+            printCli('Gõ "help" để xem các lệnh khả dụng.', 'normal');
+        }
+
+        // Lắng nghe phím Enter trong Terminal
+        function handleEnter(e) {
+            if (e.key === 'Enter') {
+                const val = cliInput.value.trim();
+                if (val) {
+                    processCommand(val);
+                    cliInput.value = '';
+                }
+            }
+        }
+
+        // Xử lý lệnh gõ tay
+        function processCommand(cmd) {
+            printCli(cmd, 'cmd');
+            const lowerCmd = cmd.toLowerCase();
+
+            if (lowerCmd === 'clear') {
+                cliOutput.innerHTML = '';
+            } else if (lowerCmd === 'help') {
+                printCli('Các lệnh hỗ trợ: get, post, clear, help', 'info');
+            } else if (lowerCmd === 'get') {
+                actionGet();
+            } else if (lowerCmd === 'post') {
+                actionPost();
+            } else {
+                printCli(`Command not found: ${cmd}. Nhấn nút trên Bảng điều khiển hoặc gõ 'help'.`, 'error');
+            }
+        }
+
+        // Thay đổi trạng thái lỗi JSON
+        function toggleJsonSyntax() {
+            isJsonValid = !jsonToggle.checked;
+            if (isJsonValid) {
+                jsonStatusText.textContent = "Chuẩn cú pháp (Valid)";
+                jsonStatusText.className = "text-xs text-green-600 font-bold mt-1 uppercase tracking-wide";
+                printCli('Cấu hình: Đã chuyển sang chế độ tạo JSON chuẩn.', 'success');
+            } else {
+                jsonStatusText.textContent = "Sai cú pháp (Malformed)";
+                jsonStatusText.className = "text-xs text-red-500 font-bold mt-1 uppercase tracking-wide";
+                printCli('CẢNH BÁO CỐ Ý: Đã chuyển sang chế độ tạo JSON lỗi (thiếu ngoặc/sai format).', 'error');
+            }
+        }
+
+        // Animation di chuyển gói tin
+        function animatePacket(direction, isErrorPacket, callback) {
+            if (isAnimating) return;
+            isAnimating = true;
+
+            const packet = isErrorPacket ? packetError : packetValid;
+            const animClass = direction === 'right' ? 'animate-move-right' : 'animate-move-left';
+            
+            packet.classList.remove('animate-move-right', 'animate-move-left');
+            void packet.offsetWidth; // Trigger reflow
+            packet.classList.add(animClass);
+
+            setTimeout(() => {
+                packet.classList.remove(animClass);
+                isAnimating = false;
+                if (callback) callback();
+            }, 1500); // Khớp với thời gian CSS animation
+        }
+
+        // Hiệu ứng Router Lỗi
+        function routerErrorEffect() {
+            routerDevice.classList.replace('bg-slate-700', 'bg-red-600');
+            routerDevice.classList.replace('border-slate-500', 'border-red-400');
+            routerDevice.classList.add('animate-shake');
+            routerLabel.classList.replace('bg-slate-800', 'bg-red-900');
+            
+            setTimeout(() => {
+                routerDevice.classList.remove('animate-shake');
+                routerDevice.classList.replace('bg-red-600', 'bg-slate-700');
+                routerDevice.classList.replace('border-red-400', 'border-slate-500');
+                routerLabel.classList.replace('bg-red-900', 'bg-slate-800');
+            }, 2000);
+        }
+
+        // Action: Lấy thông tin (GET)
+        function actionGet() {
+            if (isAnimating) return;
+            printCli('curl -X GET https://10.0.0.1/restconf/data/interfaces -H "Accept: application/json"', 'cmd');
+            printCli('Đang gửi yêu cầu GET tới Router...', 'info');
+
+            // Router gửi trả JSON (từ phải sang trái)
+            setTimeout(() => {
+                animatePacket('left', false, () => {
+                    printCli('HTTP/1.1 200 OK', 'success');
+                    const fakeJson = `{\n  "interfaces": {\n    "interface": [\n      {\n        "name": "GigabitEthernet1",\n        "enabled": true\n      }\n    ]\n  }\n}`;
+                    printCli(fakeJson, 'json');
+                });
+            }, 500);
+        }
+
+        // Action: Gửi cấu hình (POST)
+        function actionPost() {
+            if (isAnimating) return;
+            
+            // Controller gửi JSON tới Router (từ trái sang phải)
+            if (isJsonValid) {
+                printCli(`curl -X POST -H "Content-Type: application/json" -d '{"ip": "10.0.0.2"}' https://10.0.0.1/api`, 'cmd');
+                printCli('Đang gửi Payload JSON hợp lệ (Valid)...', 'info');
+                
+                animatePacket('right', false, () => {
+                    printCli('Router đã tiếp nhận và phân tích JSON thành công.', 'success');
+                    printCli('HTTP/1.1 201 Created', 'info');
+                });
+            } else {
+                // Giả lập chuỗi JSON sai
+                printCli(`curl -X POST -H "Content-Type: application/json" -d '{ip": "10.0.0.2}' https://10.0.0.1/api`, 'cmd');
+                printCli('Đang gửi Payload JSON bị thiếu dấu ngoặc kép...', 'info');
+
+                animatePacket('right', false, () => {
+                    // Khi tới Router, Router phát hiện lỗi
+                    routerErrorEffect();
+                    printCli('HTTP/1.1 400 Bad Request', 'error');
+                    printCli('Hậu quả: Router từ chối cấu hình. Chi tiết lỗi từ thiết bị:', 'error');
+                    printCli('{"error-message": "JSON Parse Error: Unexpected string in JSON at position 2"}', 'json');
+                    
+                    // Gửi thư báo lỗi (phong bì đỏ) trả về Controller
+                    setTimeout(() => {
+                        animatePacket('left', true, () => {
+                            printCli('Controller nhận Syslog cảnh báo: Tiến trình tự động hóa bị gián đoạn do lỗi dữ liệu!', 'error');
+                        });
+                    }, 500);
+                });
+            }
+        }
+
+        // Action: Reset toàn bộ
+        function resetSimulation() {
+            if(isAnimating) return;
+            jsonToggle.checked = false;
+            toggleJsonSyntax();
+            initTerminal();
+            printCli('Đã Reset mô phỏng về trạng thái ban đầu.', 'success');
+        }
+
+        // Touch scroll logic cho mobile để vuốt vùng trống thì cuộn trang, vuốt thẻ thì cuộn thẻ
+        const topoContainer = document.getElementById('topo-container');
+        let isDown = false;
+        let startX;
+        let startY;
+        let scrollLeft;
+        let scrollTop;
+
+        topoContainer.addEventListener('mousedown', (e) => {
+            isDown = true;
+            topoContainer.classList.add('cursor-grabbing');
+            startX = e.pageX - topoContainer.offsetLeft;
+            startY = e.pageY - topoContainer.offsetTop;
+            scrollLeft = topoContainer.scrollLeft;
+            scrollTop = topoContainer.scrollTop;
+        });
+        
+        topoContainer.addEventListener('mouseleave', () => {
+            isDown = false;
+            topoContainer.classList.remove('cursor-grabbing');
+        });
+        
+        topoContainer.addEventListener('mouseup', () => {
+            isDown = false;
+            topoContainer.classList.remove('cursor-grabbing');
+        });
+        
+        topoContainer.addEventListener('mousemove', (e) => {
+            if (!isDown) return;
+            e.preventDefault();
+            const x = e.pageX - topoContainer.offsetLeft;
+            const y = e.pageY - topoContainer.offsetTop;
+            const walkX = (x - startX) * 2; // Tốc độ cuộn ngang
+            const walkY = (y - startY) * 2; // Tốc độ cuộn dọc
+            topoContainer.scrollLeft = scrollLeft - walkX;
+            topoContainer.scrollTop = scrollTop - walkY;
+        });
+
+        // Khởi động
+        window.onload = () => {
+            initTerminal();
+        };
+    </script>
+</body>
+</html>

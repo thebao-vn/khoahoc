@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>THE BÁO: Phần 5 - VPN Concepts</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Tùy chỉnh thanh cuộn cho Topology */
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #f1f1f1; 
+            border-radius: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #cbd5e1; 
+            border-radius: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8; 
+        }
+
+        /* Topology Elements */
+        .node {
+            transition: all 0.3s ease;
+        }
+        .link-line {
+            stroke: #94a3b8;
+            stroke-width: 4;
+            transition: stroke 0.5s ease;
+        }
+        .tunnel-line {
+            stroke: #10b981; /* Green for secure */
+            stroke-width: 8;
+            stroke-dasharray: 10;
+            opacity: 0;
+            transition: opacity 0.5s ease;
+            animation: dash 2s linear infinite;
+        }
+        .tunnel-line.active {
+            opacity: 0.6;
+        }
+
+        @keyframes dash {
+            to { stroke-dashoffset: -20; }
+        }
+
+        /* Packets */
+        .packet {
+            position: absolute;
+            font-size: 24px;
+            z-index: 50;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+            filter: drop-shadow(0 4px 6px rgba(0,0,0,0.3));
+        }
+
+        /* Console typing effect cursor */
+        .cursor {
+            display: inline-block;
+            width: 8px;
+            height: 15px;
+            background-color: #22c55e;
+            animation: blink 1s step-end infinite;
+            vertical-align: middle;
+            margin-left: 2px;
+        }
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0; }
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen flex flex-col font-sans text-gray-800">
+
+    <!-- Sticky Header -->
+    <header class="sticky top-0 z-50 bg-blue-900 text-white shadow-md">
+        <div class="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
+            <div>
+                <h1 class="text-xl md:text-2xl font-bold">THE BÁO: BẢO MẬT HỆ THỐNG</h1>
+                <p class="text-xs md:text-sm text-blue-200">5.3 Các khái niệm về VPN (Site-to-site, Remote access)</p>
+            </div>
+            <div class="hidden md:flex items-center space-x-2 text-sm bg-blue-800 px-3 py-1 rounded">
+                <span class="text-green-400">●</span> <span>Mô phỏng đang chạy</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="flex-grow max-w-7xl w-full mx-auto p-2 md:p-4 flex flex-col gap-4">
+        
+        <!-- Instruction Banner -->
+        <div class="bg-white p-4 rounded-lg shadow border-l-4 border-blue-500">
+            <h2 class="font-bold text-lg mb-1">Mục tiêu bài học</h2>
+            <p class="text-sm text-gray-600">Tìm hiểu cách VPN bảo vệ dữ liệu khi truyền qua Internet. Hãy thử gửi dữ liệu khi chưa bật VPN để xem hậu quả, sau đó cấu hình IPsec/VPN Client và thử lại.</p>
+        </div>
+
+        <!-- Topology Section -->
+        <section class="bg-white rounded-lg shadow flex flex-col">
+            <div class="p-3 border-b bg-gray-50 flex justify-between items-center rounded-t-lg">
+                <h3 class="font-bold flex items-center gap-2"><span class="text-xl">🗺️</span> Sơ đồ Mạng (Topology)</h3>
+                <span class="text-xs text-gray-500 bg-gray-200 px-2 py-1 rounded">Kéo/Vuốt để xem chi tiết</span>
+            </div>
+            
+            <!-- Topology Canvas Container (50vh on mobile, fixed min-size inside to prevent distortion) -->
+            <div id="topology-container" class="w-full h-[50vh] md:h-[60vh] overflow-auto custom-scrollbar relative bg-slate-50 touch-pan-x touch-pan-y">
+                <!-- Fixed size internal container for absolute positioning -->
+                <div class="w-[800px] h-[400px] relative mx-auto mt-4 md:mt-10" id="network-board">
+                    
+                    <!-- SVG for Lines and Tunnels -->
+                    <svg class="absolute inset-0 w-full h-full pointer-events-none" style="z-index: 10;">
+                        <!-- Physical Links -->
+                        <line x1="150" y1="150" x2="400" y2="150" class="link-line" /> <!-- HQ to Internet -->
+                        <line x1="400" y1="150" x2="650" y2="150" class="link-line" /> <!-- Internet to Branch -->
+                        <line x1="400" y1="150" x2="400" y2="300" class="link-line" /> <!-- Internet to Remote -->
+
+                        <!-- VPN Tunnels -->
+                        <line x1="150" y1="150" x2="650" y2="150" id="tunnel-s2s" class="tunnel-line" />
+                        <line x1="400" y1="300" x2="150" y2="150" id="tunnel-remote" class="tunnel-line" />
+                    </svg>
+
+                    <!-- Nodes -->
+                    <!-- HQ Router -->
+                    <div class="absolute top-[150px] left-[150px] -translate-x-1/2 -translate-y-1/2 text-center node" id="node-hq">
+                        <div class="w-16 h-16 bg-blue-100 rounded-full border-4 border-blue-600 flex items-center justify-center shadow-lg mx-auto mb-2 relative z-20">
+                            <span class="text-2xl">🏢</span>
+                        </div>
+                        <div class="font-bold bg-white px-2 py-1 rounded shadow text-xs">HQ Router<br><span class="text-gray-500 font-normal">10.0.1.0/24</span></div>
+                    </div>
+
+                    <!-- Internet Cloud -->
+                    <div class="absolute top-[150px] left-[400px] -translate-x-1/2 -translate-y-1/2 text-center node" id="node-internet">
+                        <div class="w-24 h-16 bg-gray-200 rounded-full border-2 border-gray-400 flex items-center justify-center shadow mx-auto mb-2 relative z-20">
+                            <span class="text-3xl" id="internet-icon">☁️</span>
+                        </div>
+                        <div class="font-bold bg-white px-2 py-1 rounded shadow text-xs text-red-600" id="internet-label">Internet<br>(Không an toàn)</div>
+                    </div>
+
+                    <!-- Branch Router -->
+                    <div class="absolute top-[150px] left-[650px] -translate-x-1/2 -translate-y-1/2 text-center node" id="node-branch">
+                        <div class="w-16 h-16 bg-green-100 rounded-full border-4 border-green-600 flex items-center justify-center shadow-lg mx-auto mb-2 relative z-20">
+                            <span class="text-2xl">🏬</span>
+                        </div>
+                        <div class="font-bold bg-white px-2 py-1 rounded shadow text-xs">Branch Router<br><span class="text-gray-500 font-normal">10.0.2.0/24</span></div>
+                    </div>
+
+                    <!-- Remote User -->
+                    <div class="absolute top-[300px] left-[400px] -translate-x-1/2 -translate-y-1/2 text-center node" id="node-remote">
+                        <div class="w-14 h-14 bg-purple-100 rounded border-4 border-purple-600 flex items-center justify-center shadow-lg mx-auto mb-2 relative z-20">
+                            <span class="text-2xl">💻</span>
+                        </div>
+                        <div class="font-bold bg-white px-2 py-1 rounded shadow text-xs">Remote Worker<br><span class="text-gray-500 font-normal">Public IP</span></div>
+                    </div>
+
+                </div>
+            </div>
+        </section>
+
+        <!-- Controls & CLI Container -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            
+            <!-- Control Panel -->
+            <section class="bg-white rounded-lg shadow p-4 flex flex-col gap-4">
+                <h3 class="font-bold border-b pb-2 flex items-center gap-2"><span class="text-xl">🎛️</span> Bảng Điều Khiển</h3>
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <!-- Action Cards -->
+                    <div class="border rounded p-3 bg-gray-50 hover:bg-gray-100 transition">
+                        <h4 class="font-semibold text-sm mb-2 text-blue-800">1. Site-to-Site VPN (IPsec)</h4>
+                        <p class="text-xs text-gray-600 mb-3">Kết nối chi nhánh với Trụ sở.</p>
+                        <button id="btn-s2s" onclick="toggleS2S()" class="w-full bg-blue-600 hover:bg-blue-700 text-white text-sm py-2 rounded shadow transition">
+                            Cấu hình IPsec VPN
+                        </button>
+                    </div>
+
+                    <div class="border rounded p-3 bg-gray-50 hover:bg-gray-100 transition">
+                        <h4 class="font-semibold text-sm mb-2 text-purple-800">2. Remote Access VPN</h4>
+                        <p class="text-xs text-gray-600 mb-3">Nhân viên làm việc từ xa kết nối vào HQ.</p>
+                        <button id="btn-remote" onclick="toggleRemote()" class="w-full bg-purple-600 hover:bg-purple-700 text-white text-sm py-2 rounded shadow transition">
+                            Bật VPN Client
+                        </button>
+                    </div>
+                </div>
+
+                <div class="border-t pt-3 mt-1">
+                    <h4 class="font-semibold text-sm mb-2 text-gray-800">3. Giả lập gửi dữ liệu (Kiểm tra bảo mật)</h4>
+                    <div class="flex flex-wrap gap-2">
+                        <button onclick="sendTraffic('hq', 'branch')" class="bg-gray-800 hover:bg-black text-white text-xs px-4 py-2 rounded shadow flex items-center gap-1">
+                            <span>HQ ➔ Branch</span>
+                        </button>
+                        <button onclick="sendTraffic('remote', 'hq')" class="bg-gray-800 hover:bg-black text-white text-xs px-4 py-2 rounded shadow flex items-center gap-1">
+                            <span>Remote ➔ HQ</span>
+                        </button>
+                        <div class="flex-grow"></div>
+                        <button onclick="resetSimulation()" class="bg-red-500 hover:bg-red-600 text-white text-xs px-4 py-2 rounded shadow flex items-center gap-1">
+                            <span>🔄 Reset hệ thống</span>
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Console CLI -->
+            <section class="bg-[#1e1e1e] rounded-lg shadow border border-gray-700 flex flex-col h-64 lg:h-auto font-mono text-sm">
+                <div class="bg-gray-800 px-3 py-1 flex items-center gap-2 rounded-t-lg border-b border-gray-700">
+                    <div class="w-3 h-3 rounded-full bg-red-500"></div>
+                    <div class="w-3 h-3 rounded-full bg-yellow-500"></div>
+                    <div class="w-3 h-3 rounded-full bg-green-500"></div>
+                    <span class="text-gray-400 text-xs ml-2">Terminal / Console</span>
+                </div>
+                
+                <div id="console-output" class="flex-grow p-3 overflow-y-auto custom-scrollbar text-green-400 whitespace-pre-wrap break-words">
+                    <!-- Console lines will appear here -->
+                </div>
+
+                <div class="p-2 border-t border-gray-700 flex items-center bg-black rounded-b-lg">
+                    <span class="text-blue-400 mr-2">Administrator></span>
+                    <input type="text" id="cli-input" class="flex-grow bg-transparent text-green-400 outline-none border-none font-mono" placeholder="Nhập lệnh (vd: ping branch, vpn s2s on)..." autocomplete="off">
+                </div>
+            </section>
+
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="bg-black text-gray-400 py-6 text-center text-sm mt-8">
+        <p>© 2026 THE BÁO - Nền tảng Bảo mật (Security Fundamentals).</p>
+        <p class="mt-1 opacity-50"> End.</p>
+        <div class="mt-2 text-white font-bold">Thiết kế bởi "THE BÁO"</div>
+    </footer>
+
+    <!-- JavaScript Logic -->
+    <script>
+        // State Management
+        const state = {
+            s2sActive: false,
+            remoteActive: false,
+            isAnimating: false
+        };
+
+        // DOM Elements
+        const consoleOut = document.getElementById('console-output');
+        const cliInput = document.getElementById('cli-input');
+        const board = document.getElementById('network-board');
+        const internetIcon = document.getElementById('internet-icon');
+        const internetLabel = document.getElementById('internet-label');
+        const tunnelS2S = document.getElementById('tunnel-s2s');
+        const tunnelRemote = document.getElementById('tunnel-remote');
+        
+        // Node coordinates (relative to the 800x400 board)
+        const coords = {
+            hq: { x: 150, y: 150 },
+            internet: { x: 400, y: 150 },
+            branch: { x: 650, y: 150 },
+            remote: { x: 400, y: 300 }
+        };
+
+        // Initialize
+        window.onload = () => {
+            printConsole("Hệ thống Mô phỏng Mạng đã khởi động.", "system");
+            printConsole("Gợi ý lệnh CLI: 'ping branch', 'ping hq', 'vpn s2s on', 'vpn remote on', 'reset'", "info");
+            printConsole("Trạng thái: Chưa có VPN nào được thiết lập. Kết nối qua Internet đang mở (Rủi ro).", "warning");
+        };
+
+        // --- Console Logic ---
+        function printConsole(text, type = "normal", isTypingEffect = false) {
+            const line = document.createElement('div');
+            line.className = "mb-1";
+            
+            // Syntax coloring
+            if (type === "cmd") line.innerHTML = `<span class="text-blue-400">Administrator></span> <span class="text-white">${text}</span>`;
+            else if (type === "error") line.innerHTML = `<span class="text-red-500 font-bold">[LỖI]</span> ${text}`;
+            else if (type === "success") line.innerHTML = `<span class="text-green-300 font-bold">[OK]</span> ${text}`;
+            else if (type === "warning") line.innerHTML = `<span class="text-yellow-400 font-bold">[CẢNH BÁO]</span> ${text}`;
+            else if (type === "system") line.innerHTML = `<span class="text-purple-400">[SYSTEM]</span> ${text}`;
+            else line.innerHTML = text;
+
+            consoleOut.appendChild(line);
+            consoleOut.scrollTop = consoleOut.scrollHeight;
+        }
+
+        // CLI Input handling
+        cliInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                const cmd = this.value.trim().toLowerCase();
+                if(!cmd) return;
+                
+                printConsole(this.value, "cmd");
+                this.value = '';
+                processCommand(cmd);
+            }
+        });
+
+        function processCommand(cmd) {
+            if (cmd === 'reset') {
+                resetSimulation();
+            } else if (cmd === 'vpn s2s on' || cmd === 'vpn s2s enable') {
+                if (!state.s2sActive) toggleS2S(true);
+                else printConsole("Site-to-Site VPN đã được bật từ trước.", "warning");
+            } else if (cmd === 'vpn remote on' || cmd === 'vpn client connect') {
+                if (!state.remoteActive) toggleRemote(true);
+                else printConsole("Remote VPN đã được kết nối từ trước.", "warning");
+            } else if (cmd === 'ping branch') {
+                sendTraffic('hq', 'branch');
+            } else if (cmd === 'ping hq') {
+                sendTraffic('remote', 'hq');
+            } else {
+                printConsole(`Lệnh không hợp lệ: ${cmd}. Vui lòng thử các lệnh gợi ý.`, "error");
+            }
+        }
+
+        // --- Action Logics ---
+
+        function toggleS2S(fromCli = false) {
+            if (state.isAnimating) return;
+            state.s2sActive = !state.s2sActive;
+            const btn = document.getElementById('btn-s2s');
+
+            if (state.s2sActive) {
+                btn.classList.replace('bg-blue-600', 'bg-red-600');
+                btn.classList.replace('hover:bg-blue-700', 'hover:bg-red-700');
+                btn.innerText = "Tắt Site-to-Site IPsec";
+                tunnelS2S.classList.add('active');
+                
+                if (!fromCli) {
+                    printConsole("crypto isakmp policy 10", "cmd");
+                    printConsole(" encryption aes", "normal");
+                    printConsole(" authentication pre-share", "normal");
+                    printConsole("crypto ipsec transform-set MYSET esp-aes esp-sha-hmac", "cmd");
+                    printConsole("crypto map MYMAP 10 ipsec-isakmp", "cmd");
+                }
+                setTimeout(() => printConsole("ISAKMP Phase 1 & Phase 2 established. IPsec Tunnel HQ <-> Branch UP.", "success"), 800);
+            } else {
+                btn.classList.replace('bg-red-600', 'bg-blue-600');
+                btn.classList.replace('hover:bg-red-700', 'hover:bg-blue-700');
+                btn.innerText = "Cấu hình IPsec VPN";
+                tunnelS2S.classList.remove('active');
+                
+                if (!fromCli) printConsole("no crypto map MYMAP", "cmd");
+                printConsole("IPsec Tunnel HQ <-> Branch DOWN.", "warning");
+            }
+        }
+
+        function toggleRemote(fromCli = false) {
+            if (state.isAnimating) return;
+            state.remoteActive = !state.remoteActive;
+            const btn = document.getElementById('btn-remote');
+
+            if (state.remoteActive) {
+                btn.classList.replace('bg-purple-600', 'bg-red-600');
+                btn.classList.replace('hover:bg-purple-700', 'hover:bg-red-700');
+                btn.innerText = "Ngắt kết nối Remote Client";
+                tunnelRemote.classList.add('active');
+                
+                if (!fromCli) {
+                    printConsole("vpn-client connect HQ_Gateway", "cmd");
+                    printConsole("Username: remoteworker", "normal");
+                    printConsole("Password: ****", "normal");
+                }
+                setTimeout(() => printConsole("Xác thực thành công. SSL/TLS VPN Tunnel Remote <-> HQ UP.", "success"), 800);
+            } else {
+                btn.classList.replace('bg-red-600', 'bg-purple-600');
+                btn.classList.replace('hover:bg-red-700', 'hover:bg-purple-700');
+                btn.innerText = "Bật VPN Client";
+                tunnelRemote.classList.remove('active');
+                
+                if (!fromCli) printConsole("vpn-client disconnect", "cmd");
+                printConsole("VPN Client disconnected.", "warning");
+            }
+        }
+
+        function resetSimulation() {
+            if (state.isAnimating) return;
+            printConsole("reset configuration", "cmd");
+            
+            if (state.s2sActive) toggleS2S(true);
+            if (state.remoteActive) toggleRemote(true);
+            
+            internetIcon.innerText = "☁️";
+            internetLabel.innerHTML = "Internet<br>(Không an toàn)";
+            internetLabel.className = "font-bold bg-white px-2 py-1 rounded shadow text-xs text-red-600";
+            
+            printConsole("Hệ thống đã được khôi phục về trạng thái ban đầu.", "system");
+        }
+
+        // --- Animation & Traffic Logic ---
+        function sendTraffic(sourceNode, destNode) {
+            if (state.isAnimating) return;
+            
+            printConsole(`ping ${destNode} (Từ ${sourceNode})`, "cmd");
+            
+            // Check encryption status based on route
+            let isEncrypted = false;
+            if (sourceNode === 'hq' && destNode === 'branch' && state.s2sActive) isEncrypted = true;
+            if (sourceNode === 'remote' && destNode === 'hq' && state.remoteActive) isEncrypted = true;
+
+            const startCoords = coords[sourceNode];
+            const endCoords = coords[destNode];
+
+            // Create Packet Element
+            const packet = document.createElement('div');
+            packet.className = 'packet';
+            packet.innerHTML = isEncrypted ? '🔒' : '✉️'; // Lock for encrypted, Envelope for cleartext
+            board.appendChild(packet);
+
+            state.isAnimating = true;
+            printConsole(`Gửi gói tin: ${isEncrypted ? 'Đã mã hóa (ESP/AES)' : 'Cleartext (Không mã hóa)'}...`, "normal");
+
+            if (isEncrypted) {
+                // Success Path (Moves through tunnel)
+                const animation = packet.animate([
+                    { left: startCoords.x + 'px', top: startCoords.y + 'px' },
+                    { left: endCoords.x + 'px', top: endCoords.y + 'px' }
+                ], {
+                    duration: 2000,
+                    easing: 'ease-in-out'
+                });
+
+                animation.onfinish = () => {
+                    packet.remove();
+                    printConsole(`Reply from ${destNode}: bytes=32 time<10ms. (Dữ liệu an toàn)`, "success");
+                    state.isAnimating = false;
+                };
+            } else {
+                // Failure Path (Intercepted at Internet)
+                const midCoords = coords.internet;
+                
+                const animationToInternet = packet.animate([
+                    { left: startCoords.x + 'px', top: startCoords.y + 'px' },
+                    { left: midCoords.x + 'px', top: midCoords.y + 'px' }
+                ], {
+                    duration: 1000,
+                    easing: 'linear'
+                });
+
+                animationToInternet.onfinish = () => {
+                    // Hacker Action
+                    packet.innerHTML = '😈';
+                    internetIcon.innerText = '😈';
+                    internetLabel.innerHTML = "HACKER<br>Đã bắt gói tin!";
+                    internetLabel.classList.replace('text-red-600', 'text-black');
+                    internetLabel.classList.add('bg-red-500', 'text-white');
+                    
+                    printConsole(`Request timed out.`, "normal");
+                    printConsole(`Gói tin (phong bì hở) đã bị đánh cắp/đọc trộm tại điểm trung chuyển (Internet)!`, "error");
+                    
+                    setTimeout(() => {
+                        packet.remove();
+                        internetIcon.innerText = "☁️";
+                        internetLabel.innerHTML = "Internet<br>(Không an toàn)";
+                        internetLabel.classList.remove('bg-red-500', 'text-white');
+                        internetLabel.classList.add('text-red-600');
+                        state.isAnimating = false;
+                    }, 2500);
+                };
+            }
+        }
+    </script>
+</body>
+</html>

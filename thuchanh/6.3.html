@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>THE BÁO: 6.3 Đặc điểm của REST-based APIs (CRUD, HTTP verbs)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        /* Tùy chỉnh thanh cuộn cho màn hình Console và Topology */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #1f2937; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #6b7280; }
+
+        .topology-scroll::-webkit-scrollbar-track { background: #f1f5f9; }
+        .topology-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; }
+
+        /* Hoạt ảnh (Animations) */
+        @keyframes pulse-border {
+            0% { border-color: rgba(59, 130, 246, 0.5); box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.4); }
+            70% { border-color: rgba(59, 130, 246, 1); box-shadow: 0 0 0 10px rgba(59, 130, 246, 0); }
+            100% { border-color: rgba(59, 130, 246, 0.5); box-shadow: 0 0 0 0 rgba(59, 130, 246, 0); }
+        }
+        
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            10%, 30%, 50%, 70%, 90% { transform: translateX(-5px); }
+            20%, 40%, 60%, 80% { transform: translateX(5px); }
+        }
+
+        .db-update { animation: pulse-border 1s ease-out; }
+        .error-shake { animation: shake 0.5s ease-in-out; border-color: #ef4444 !important; }
+
+        /* Packet Animation Class */
+        .packet {
+            position: absolute;
+            transition: all 1s ease-in-out;
+            z-index: 50;
+            opacity: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            color: white;
+            border-radius: 8px;
+            padding: 4px 12px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+
+        .packet.show { opacity: 1; }
+    </style>
+</head>
+<body class="bg-slate-100 min-h-screen flex flex-col font-sans">
+
+    <!-- HEADER STICKY -->
+    <header class="sticky top-0 z-50 bg-slate-900 text-white shadow-lg border-b-4 border-blue-500">
+        <div class="container mx-auto px-4 py-4 flex flex-col md:flex-row justify-between items-center gap-2">
+            <h1 class="text-xl md:text-2xl font-bold tracking-wide text-center md:text-left">
+                <span class="text-blue-400">THE BÁO:</span> 6.3 Đặc điểm của REST-based APIs <br class="hidden md:block lg:hidden"> (CRUD, HTTP verbs)
+            </h1>
+            <div class="flex items-center gap-3">
+                <span class="bg-blue-600 px-3 py-1 rounded-full text-sm font-semibold shadow-inner">Automation & Programmability</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- MAIN CONTENT -->
+    <main class="flex-grow container mx-auto px-4 py-6 flex flex-col gap-6">
+        
+        <!-- TOPOLOGY / MÔ PHỎNG -->
+        <section class="bg-white rounded-xl shadow-md border border-slate-200 overflow-hidden flex flex-col">
+            <div class="bg-slate-50 border-b border-slate-200 px-4 py-2 flex justify-between items-center">
+                <h2 class="font-bold text-slate-700"><i class="fa-solid fa-network-wired text-blue-500 mr-2"></i>Sơ đồ mạng & Hoạt động (Topology)</h2>
+                <span class="text-xs text-slate-500 bg-slate-200 px-2 py-1 rounded">URL: https://10.1.1.254/api/v1/vlans</span>
+            </div>
+            
+            <!-- Khung chứa sơ đồ, có scrollbar trên mobile -->
+            <div class="topology-scroll h-[50vh] md:h-[400px] overflow-auto relative bg-grid-slate-100" style="background-image: radial-gradient(#cbd5e1 1px, transparent 1px); background-size: 20px 20px;">
+                <div class="min-w-[800px] h-full relative" id="topology-area">
+                    
+                    <!-- Admin PC -->
+                    <div class="absolute left-10 top-1/2 -translate-y-1/2 flex flex-col items-center z-10">
+                        <div class="w-24 h-24 bg-white border-4 border-slate-300 rounded-xl shadow-lg flex items-center justify-center relative">
+                            <i class="fa-solid fa-laptop-code text-5xl text-slate-700"></i>
+                            <span class="absolute -bottom-3 bg-blue-500 text-white text-xs font-bold px-2 py-1 rounded-full">REST Client</span>
+                        </div>
+                        <p class="mt-4 font-semibold text-slate-700">Quản trị viên</p>
+                        <p class="text-xs text-slate-500">192.168.1.10</p>
+                    </div>
+
+                    <!-- Đường truyền mạng -->
+                    <div class="absolute left-[8rem] right-[24rem] top-1/2 -translate-y-1/2 h-2 bg-slate-300 rounded-full flex items-center overflow-hidden">
+                        <div class="w-full h-0.5 bg-blue-400 opacity-50 relative"></div>
+                    </div>
+
+                    <!-- Router / REST API Server -->
+                    <div class="absolute right-[16rem] top-1/2 -translate-y-1/2 flex flex-col items-center z-10" id="router-node">
+                        <div class="w-24 h-24 bg-white border-4 border-slate-300 rounded-full shadow-lg flex items-center justify-center relative transition-colors duration-300">
+                            <i class="fa-solid fa-server text-4xl text-blue-600"></i>
+                            <span class="absolute -bottom-3 bg-green-500 text-white text-xs font-bold px-2 py-1 rounded-full">RESTCONF API</span>
+                        </div>
+                        <p class="mt-4 font-semibold text-slate-700">Core Switch</p>
+                        <p class="text-xs text-slate-500">10.1.1.254</p>
+                    </div>
+
+                    <!-- Database View (Trực quan hóa tài nguyên trên thiết bị) -->
+                    <div class="absolute right-10 top-1/2 -translate-y-1/2 w-48 bg-white border-2 border-slate-300 rounded-lg shadow-xl overflow-hidden" id="db-container">
+                        <div class="bg-slate-800 text-white text-center py-2 text-sm font-bold flex items-center justify-center gap-2">
+                            <i class="fa-solid fa-database text-yellow-400"></i> VLAN Database
+                        </div>
+                        <div class="p-2 h-[200px] overflow-y-auto bg-slate-50 flex flex-col gap-2" id="vlan-list">
+                            <!-- Danh sách VLAN được render bằng JS -->
+                        </div>
+                    </div>
+
+                    <!-- Điểm Neo (Anchor) cho hiệu ứng bay của Packet -->
+                    <div id="pos-client" class="absolute left-[7rem] top-1/2 -translate-y-1/2 w-1 h-1"></div>
+                    <div id="pos-server" class="absolute right-[22rem] top-1/2 -translate-y-1/2 w-1 h-1"></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- BẢNG ĐIỀU KHIỂN VÀ CONSOLE -->
+        <section class="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start h-max">
+            
+            <!-- Control Panel -->
+            <div class="bg-white rounded-xl shadow-md border border-slate-200 overflow-hidden flex flex-col h-full">
+                <div class="bg-slate-800 text-white px-4 py-3 font-bold flex justify-between items-center">
+                    <span><i class="fa-solid fa-gamepad text-blue-400 mr-2"></i>Bảng điều khiển API</span>
+                    <button onclick="resetSimulation()" class="bg-red-500 hover:bg-red-600 text-white text-xs px-3 py-1 rounded shadow transition-colors">
+                        <i class="fa-solid fa-rotate-right mr-1"></i> Reset cấu hình
+                    </button>
+                </div>
+                
+                <div class="p-5 flex flex-col gap-4">
+                    <!-- HTTP Verbs -->
+                    <div>
+                        <label class="block text-sm font-semibold text-slate-700 mb-2">1. Chọn Phương thức (HTTP Verb)</label>
+                        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                            <button onclick="selectMethod('GET')" id="btn-GET" class="verb-btn py-2 rounded-lg font-bold border-2 border-blue-500 bg-blue-500 text-white transition-all shadow hover:shadow-md">GET<br><span class="text-xs font-normal">(Read)</span></button>
+                            <button onclick="selectMethod('POST')" id="btn-POST" class="verb-btn py-2 rounded-lg font-bold border-2 border-green-500 text-green-600 hover:bg-green-50 transition-all shadow hover:shadow-md">POST<br><span class="text-xs font-normal">(Create)</span></button>
+                            <button onclick="selectMethod('PUT')" id="btn-PUT" class="verb-btn py-2 rounded-lg font-bold border-2 border-yellow-500 text-yellow-600 hover:bg-yellow-50 transition-all shadow hover:shadow-md">PUT<br><span class="text-xs font-normal">(Update)</span></button>
+                            <button onclick="selectMethod('DELETE')" id="btn-DELETE" class="verb-btn py-2 rounded-lg font-bold border-2 border-red-500 text-red-600 hover:bg-red-50 transition-all shadow hover:shadow-md">DELETE<br><span class="text-xs font-normal">(Delete)</span></button>
+                        </div>
+                    </div>
+
+                    <!-- Target / Resource ID -->
+                    <div id="target-id-container" class="hidden">
+                        <label class="block text-sm font-semibold text-slate-700 mb-2">2. ID của VLAN cần thao tác (Cho PUT/DELETE)</label>
+                        <input type="number" id="resource-id" placeholder="Ví dụ: 10, 20..." class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition-shadow">
+                    </div>
+
+                    <!-- JSON Payload -->
+                    <div id="payload-container" class="hidden">
+                        <label class="block text-sm font-semibold text-slate-700 mb-2">3. Dữ liệu (JSON Body)</label>
+                        <textarea id="json-payload" rows="4" class="w-full px-4 py-2 bg-slate-50 border border-slate-300 rounded-lg font-mono text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-shadow" placeholder='{&#10;  "id": 20,&#10;  "name": "Sales"&#10;}'></textarea>
+                        <p class="text-xs text-slate-500 mt-1"><i class="fa-solid fa-circle-info mr-1"></i> Dùng để chứa thông tin khi tạo mới (POST) hoặc cập nhật (PUT).</p>
+                    </div>
+
+                    <!-- Send Button -->
+                    <button onclick="sendGUIRequest()" class="mt-2 w-full bg-slate-800 hover:bg-slate-900 text-white font-bold py-3 rounded-lg shadow-lg transition-all transform hover:scale-[1.01] flex items-center justify-center gap-2">
+                        <i class="fa-solid fa-paper-plane"></i> GỬI YÊU CẦU API
+                    </button>
+                </div>
+            </div>
+
+            <!-- Console CLI -->
+            <div class="bg-[#1e1e1e] rounded-xl shadow-md border border-slate-700 overflow-hidden flex flex-col h-[500px] lg:h-full">
+                <div class="bg-[#323233] px-4 py-2 flex items-center gap-2">
+                    <div class="w-3 h-3 rounded-full bg-red-500"></div>
+                    <div class="w-3 h-3 rounded-full bg-yellow-500"></div>
+                    <div class="w-3 h-3 rounded-full bg-green-500"></div>
+                    <span class="text-slate-300 text-xs font-mono ml-2">Terminal - Automation Script</span>
+                </div>
+                
+                <div id="cli-output" class="p-4 flex-grow overflow-y-auto font-mono text-sm text-slate-300 flex flex-col gap-1 pb-4">
+                    <div class="text-green-400"># Khởi tạo phiên làm việc REST API...</div>
+                    <div class="text-slate-500"># Hệ thống giả lập được thiết kế bởi THE BÁO</div>
+                    <div class="text-slate-400 mt-2"># Bạn có thể dùng nút bấm bên trái, hệ thống sẽ tự động sinh lệnh curl tại đây.</div>
+                    <div class="text-slate-400 mb-4"># Hoặc gõ trực tiếp lệnh giả lập. Cú pháp hỗ trợ: </div>
+                    <div class="text-blue-300 pl-4">- get</div>
+                    <div class="text-blue-300 pl-4">- post {"id":20, "name":"Sales"}</div>
+                    <div class="text-blue-300 pl-4">- put 20 {"name":"Marketing"}</div>
+                    <div class="text-blue-300 pl-4">- delete 20</div>
+                </div>
+
+                <div class="bg-[#252526] p-3 flex items-center border-t border-slate-700">
+                    <span class="text-green-500 font-mono mr-2">admin@network:~$</span>
+                    <input type="text" id="cli-input" class="bg-transparent flex-grow text-white font-mono outline-none" placeholder="Nhập lệnh ở đây và nhấn Enter..." autocomplete="off">
+                </div>
+            </div>
+
+        </section>
+    </main>
+
+    <!-- FOOTER -->
+    <footer class="bg-black text-slate-400 py-6 mt-auto">
+        <div class="container mx-auto px-4 text-center flex flex-col items-center justify-center gap-2">
+            <p class="font-bold text-white tracking-widest text-lg">Thiết kế bởi "THE BÁO"</p>
+            <p class="text-sm">Mô phỏng phục vụ khóa học CCNA v7 - Tự động hóa và Lập trình hóa</p>
+            <p class="text-xs opacity-50">&copy; 2026 THE BÁO.</p>
+        </div>
+    </footer>
+
+    <!-- JAVASCRIPT LOGIC -->
+    <script>
+        // --- DATA & STATE ---
+        const initialDB = [
+            { id: 1, name: "default" },
+            { id: 10, name: "Management" }
+        ];
+        let networkDB = JSON.parse(JSON.stringify(initialDB));
+        let currentMethod = 'GET';
+        let isAnimating = false;
+
+        // --- DOM ELEMENTS ---
+        const vlanListEl = document.getElementById('vlan-list');
+        const dbContainer = document.getElementById('db-container');
+        const routerNode = document.getElementById('router-node');
+        const cliOutput = document.getElementById('cli-output');
+        const cliInput = document.getElementById('cli-input');
+        const targetIdContainer = document.getElementById('target-id-container');
+        const payloadContainer = document.getElementById('payload-container');
+        const jsonPayload = document.getElementById('json-payload');
+        const resourceIdInput = document.getElementById('resource-id');
+        const posClient = document.getElementById('pos-client');
+        const posServer = document.getElementById('pos-server');
+        const topologyArea = document.getElementById('topology-area');
+
+        // --- INITIALIZATION ---
+        function renderDB() {
+            vlanListEl.innerHTML = '';
+            networkDB.sort((a,b) => a.id - b.id).forEach(vlan => {
+                const isDefault = vlan.id === 1;
+                vlanListEl.innerHTML += `
+                    <div class="flex items-center justify-between bg-white border ${isDefault ? 'border-red-200' : 'border-slate-200'} p-2 rounded shadow-sm text-sm">
+                        <div class="flex flex-col">
+                            <span class="font-bold text-blue-600">VLAN ${vlan.id}</span>
+                            <span class="text-xs text-slate-500">${vlan.name}</span>
+                        </div>
+                        ${isDefault ? '<i class="fa-solid fa-lock text-red-400 text-xs" title="Protected"></i>' : ''}
+                    </div>
+                `;
+            });
+            
+            // Effect update
+            dbContainer.classList.remove('db-update');
+            void dbContainer.offsetWidth; // trigger reflow
+            dbContainer.classList.add('db-update');
+        }
+
+        window.onload = () => {
+            renderDB();
+            selectMethod('GET');
+        };
+
+        // --- UI LOGIC ---
+        function selectMethod(method) {
+            currentMethod = method;
+            
+            // Reset Button Styles
+            document.querySelectorAll('.verb-btn').forEach(btn => {
+                btn.className = btn.className.replace(/bg-\w+-500 text-white/, 'text-' + btn.id.split('-')[1].toLowerCase() + '-600 hover:bg-' + btn.id.split('-')[1].toLowerCase() + '-50');
+                if(btn.id === 'btn-GET') btn.classList.remove('bg-blue-500', 'text-white');
+            });
+
+            // Set Active Style
+            const activeBtn = document.getElementById('btn-' + method);
+            let color = '';
+            if(method === 'GET') color = 'blue';
+            if(method === 'POST') color = 'green';
+            if(method === 'PUT') color = 'yellow';
+            if(method === 'DELETE') color = 'red';
+            
+            activeBtn.classList.remove(`text-${color}-600`, `hover:bg-${color}-50`);
+            activeBtn.classList.add(`bg-${color}-500`, 'text-white');
+
+            // Show/Hide Inputs
+            targetIdContainer.classList.add('hidden');
+            payloadContainer.classList.add('hidden');
+
+            if(method === 'POST') {
+                payloadContainer.classList.remove('hidden');
+                jsonPayload.value = '{\n  "id": 20,\n  "name": "Sales"\n}';
+            } else if (method === 'PUT') {
+                targetIdContainer.classList.remove('hidden');
+                payloadContainer.classList.remove('hidden');
+                jsonPayload.value = '{\n  "name": "HR_Dept"\n}';
+            } else if (method === 'DELETE') {
+                targetIdContainer.classList.remove('hidden');
+            }
+        }
+
+        function resetSimulation() {
+            networkDB = JSON.parse(JSON.stringify(initialDB));
+            renderDB();
+            printLog("System: Cấu hình mạng đã được khôi phục về mặc định.", "system");
+        }
+
+        // --- CONSOLE LOGIC ---
+        function printLog(msg, type = "info") {
+            const time = new Date().toLocaleTimeString('vi-VN');
+            let colorClass = "text-slate-300";
+            if(type === "cmd") colorClass = "text-blue-400 font-bold";
+            if(type === "success") colorClass = "text-green-400";
+            if(type === "error") colorClass = "text-red-400";
+            if(type === "system") colorClass = "text-yellow-400";
+            if(type === "json") colorClass = "text-slate-400 ml-4";
+
+            const logLine = document.createElement('div');
+            logLine.className = colorClass;
+            
+            if (type === "cmd") {
+                logLine.innerHTML = `<span class="text-slate-500">[${time}]</span> <i class="fa-solid fa-angle-right"></i> ${msg}`;
+            } else if (type === "json") {
+                logLine.innerText = msg; // retain formatting
+            } else {
+                logLine.innerHTML = `<span class="text-slate-500">[${time}]</span> ${msg}`;
+            }
+
+            cliOutput.appendChild(logLine);
+            cliOutput.scrollTop = cliOutput.scrollHeight;
+        }
+
+        // --- ANIMATION LOGIC ---
+        function createAndAnimatePacket(method, isSuccess, callback) {
+            isAnimating = true;
+            
+            // Determine colors
+            let colorMap = {
+                'GET': 'bg-blue-500', 'POST': 'bg-green-500', 
+                'PUT': 'bg-yellow-500', 'DELETE': 'bg-red-500'
+            };
+            let verbColor = colorMap[method];
+            
+            // Create Packet Element
+            const packet = document.createElement('div');
+            packet.className = `packet ${verbColor}`;
+            let icon = method === 'GET' ? 'fa-envelope-open-text' : (method==='DELETE' ? 'fa-fire' : 'fa-box');
+            packet.innerHTML = `<i class="fa-solid ${icon} mr-1"></i> ${method}`;
+            topologyArea.appendChild(packet);
+
+            // Get Coordinates
+            const cRect = posClient.getBoundingClientRect();
+            const sRect = posServer.getBoundingClientRect();
+            const tRect = topologyArea.getBoundingClientRect();
+
+            const startX = cRect.left - tRect.left;
+            const startY = cRect.top - tRect.top;
+            const endX = sRect.left - tRect.left;
+            const endY = sRect.top - tRect.top;
+
+            // Start Position
+            packet.style.left = `${startX}px`;
+            packet.style.top = `${startY - 15}px`; // Adjust center
+            
+            // Force Reflow & Show
+            void packet.offsetWidth;
+            packet.classList.add('show');
+
+            // Move to Server
+            setTimeout(() => {
+                packet.style.left = `${endX}px`;
+                packet.style.top = `${endY - 15}px`;
+            }, 50);
+
+            // Arrive at Server -> Process -> Return response
+            setTimeout(() => {
+                // UI feedback on Server
+                if(!isSuccess) {
+                    routerNode.children[0].classList.add('error-shake');
+                    setTimeout(() => routerNode.children[0].classList.remove('error-shake'), 500);
+                }
+
+                // Change packet to response
+                packet.className = `packet ${isSuccess ? 'bg-green-500' : 'bg-red-500'} show`;
+                packet.innerHTML = isSuccess ? '<i class="fa-solid fa-check mr-1"></i> 2xx OK' : '<i class="fa-solid fa-xmark mr-1"></i> Error';
+                
+                // Move back to Client
+                setTimeout(() => {
+                    packet.style.left = `${startX}px`;
+                    packet.style.top = `${startY - 15}px`;
+                }, 100);
+
+                // Destroy and finish
+                setTimeout(() => {
+                    packet.classList.remove('show');
+                    setTimeout(() => {
+                        packet.remove();
+                        isAnimating = false;
+                        if(callback) callback();
+                    }, 500);
+                }, 1100);
+
+            }, 1100);
+        }
+
+        // --- CORE API SIMULATION LOGIC ---
+        function executeAPI(method, targetId, payloadText) {
+            if (isAnimating) {
+                printLog("Hệ thống đang xử lý request trước đó, vui lòng đợi...", "error");
+                return;
+            }
+
+            let payloadObj = null;
+            let curlCmd = `curl -k -X ${method} https://10.1.1.254/api/v1/vlans${targetId ? '/'+targetId : ''}`;
+            
+            // Generate cURL command
+            if (method === 'POST' || method === 'PUT') {
+                try {
+                    payloadObj = JSON.parse(payloadText);
+                    curlCmd += ` \\\n  -H "Content-Type: application/json" \\\n  -d '${JSON.stringify(payloadObj)}'`;
+                } catch (e) {
+                    printLog(curlCmd, "cmd");
+                    printLog("LỖI CÚ PHÁP: JSON Payload không hợp lệ. Vui lòng kiểm tra lại ngoặc, phẩy.", "error");
+                    createAndAnimatePacket(method, false, null);
+                    return;
+                }
+            }
+
+            printLog(curlCmd, "cmd");
+
+            // Xử lý Logic Database giả lập
+            let isSuccess = false;
+            let responseMsg = "";
+            let responseData = null;
+
+            setTimeout(() => {
+                if (method === 'GET') {
+                    isSuccess = true;
+                    responseMsg = "HTTP/1.1 200 OK (Truy xuất thành công)";
+                    responseData = networkDB;
+                } 
+                else if (method === 'POST') {
+                    if(!payloadObj || !payloadObj.id || !payloadObj.name) {
+                        responseMsg = "HTTP/1.1 400 Bad Request: Thiếu 'id' hoặc 'name'";
+                    } else if (networkDB.find(v => v.id === payloadObj.id)) {
+                        responseMsg = `HTTP/1.1 409 Conflict: VLAN ID ${payloadObj.id} đã tồn tại!`;
+                    } else {
+                        networkDB.push({id: payloadObj.id, name: payloadObj.name});
+                        isSuccess = true;
+                        responseMsg = `HTTP/1.1 201 Created: Đã tạo VLAN ${payloadObj.id}`;
+                    }
+                }
+                else if (method === 'PUT') {
+                    if(!targetId) {
+                        responseMsg = "HTTP/1.1 405 Method Not Allowed: Cần chỉ định ID để PUT";
+                    } else {
+                        let idx = networkDB.findIndex(v => v.id === parseInt(targetId));
+                        if (idx === -1) {
+                            responseMsg = `HTTP/1.1 404 Not Found: Không tìm thấy VLAN ${targetId}`;
+                        } else {
+                            if(payloadObj.name) networkDB[idx].name = payloadObj.name;
+                            isSuccess = true;
+                            responseMsg = `HTTP/1.1 200 OK: Đã cập nhật cấu hình VLAN ${targetId}`;
+                        }
+                    }
+                }
+                else if (method === 'DELETE') {
+                    if(!targetId) {
+                        responseMsg = "HTTP/1.1 405 Method Not Allowed: Cần chỉ định ID để DELETE";
+                    } else {
+                        let idToDelete = parseInt(targetId);
+                        if (idToDelete === 1) {
+                            responseMsg = "HTTP/1.1 403 Forbidden: HẬU QUẢ NGHIÊM TRỌNG! Không được phép xóa VLAN 1 (Default). Hệ thống từ chối.";
+                        } else {
+                            let idx = networkDB.findIndex(v => v.id === idToDelete);
+                            if (idx === -1) {
+                                responseMsg = `HTTP/1.1 404 Not Found: Không có VLAN ${idToDelete} để xóa.`;
+                            } else {
+                                networkDB.splice(idx, 1);
+                                isSuccess = true;
+                                responseMsg = `HTTP/1.1 204 No Content: Đã xóa thành công VLAN ${idToDelete}`;
+                            }
+                        }
+                    }
+                }
+
+                // Chạy Hoạt ảnh và hiển thị kết quả
+                createAndAnimatePacket(method, isSuccess, () => {
+                    printLog(responseMsg, isSuccess ? "success" : "error");
+                    if(responseData) {
+                        printLog(JSON.stringify(responseData, null, 2), "json");
+                    }
+                    if(isSuccess && method !== 'GET') {
+                        renderDB(); // Update UI Database
+                    }
+                });
+
+            }, 200); // Slight delay for UI feel
+        }
+
+        // --- GUI TRIGGER ---
+        function sendGUIRequest() {
+            let targetId = resourceIdInput.value.trim();
+            let payloadText = jsonPayload.value.trim();
+            
+            // Xóa rác nếu GET/POST không cần targetId
+            if (currentMethod === 'GET' || currentMethod === 'POST') targetId = "";
+            
+            executeAPI(currentMethod, targetId, payloadText);
+        }
+
+        // --- CLI TRIGGER ---
+        cliInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                const cmdString = this.value.trim();
+                if (!cmdString) return;
+                this.value = '';
+
+                // Parser đơn giản cho CLI
+                // get -> method GET
+                // post {"id":30,"name":"IT"}
+                // put 30 {"name":"IT_Update"}
+                // delete 30
+                
+                const parts = cmdString.match(/^(get|post|put|delete)\s*(\d+)?\s*(.*)?$/i);
+                
+                if(!parts) {
+                    printLog(cmdString, "cmd");
+                    printLog("Lỗi cú pháp CLI giả lập. Xem hướng dẫn ở trên.", "error");
+                    return;
+                }
+
+                const method = parts[1].toUpperCase();
+                const targetId = parts[2] || "";
+                const payload = parts[3] || "";
+
+                // Gán ngược lại UI cho trực quan
+                selectMethod(method);
+                if(targetId) resourceIdInput.value = targetId;
+                if(payload) jsonPayload.value = payload;
+
+                executeAPI(method, targetId, payload);
+            }
+        });
+
+    </script>
+</body>
+</html>

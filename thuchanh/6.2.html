@@ -1,0 +1,646 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>THE BÁO: KIẾN TRÚC CISCO DNA CENTER</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome cho Icon -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace'],
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        /* Tùy chỉnh thanh cuộn cho Console */
+        .scrollbar-custom::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        .scrollbar-custom::-webkit-scrollbar-track {
+            background: #1e293b; 
+        }
+        .scrollbar-custom::-webkit-scrollbar-thumb {
+            background: #475569; 
+            border-radius: 4px;
+        }
+        .scrollbar-custom::-webkit-scrollbar-thumb:hover {
+            background: #64748b; 
+        }
+
+        /* * Xử lý phần Topology trên Mobile: 
+         * Giới hạn chiều cao 50vh, cho phép cuộn ngang dọc nội bộ.
+         */
+        .topology-wrapper {
+            width: 100%;
+            height: 50vh; /* Giới hạn chiều cao trên mobile */
+            min-height: 400px;
+            overflow: auto; /* Cho phép cuộn */
+            background-color: #f8fafc;
+            position: relative;
+            cursor: grab;
+        }
+        .topology-wrapper:active {
+            cursor: grabbing;
+        }
+        
+        @media (min-width: 1024px) {
+            .topology-wrapper {
+                height: 600px; /* Cố định trên Desktop */
+                overflow: hidden; /* Desktop không cần cuộn nội bộ nếu đủ rộng */
+            }
+        }
+
+        /* Kích thước chuẩn cố định không bị móp méo */
+        .topology-canvas {
+            width: 1000px;
+            height: 600px;
+            position: relative;
+            margin: 0 auto;
+        }
+
+        /* Animations */
+        @keyframes pulse-red {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); border-color: #ef4444; }
+            50% { box-shadow: 0 0 0 15px rgba(239, 68, 68, 0); border-color: #f87171; }
+        }
+        .error-state {
+            animation: pulse-red 1.5s infinite;
+            background-color: #fee2e2 !important;
+            color: #b91c1c !important;
+        }
+
+        @keyframes float-packet {
+            0% { offset-distance: 0%; opacity: 1; transform: scale(1); }
+            50% { transform: scale(1.2); }
+            100% { offset-distance: 100%; opacity: 0; transform: scale(0.5); }
+        }
+
+        .node-hover {
+            transition: all 0.3s ease;
+        }
+        .node-hover:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col bg-slate-100 text-slate-800">
+
+    <!-- Sticky Header -->
+    <header class="sticky top-0 z-50 bg-slate-900 text-white shadow-lg border-b-4 border-blue-500">
+        <div class="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <i class="fas fa-network-wired text-blue-400 text-2xl"></i>
+                <h1 class="text-lg md:text-xl font-bold tracking-wide">
+                    <span class="text-slate-400">THE BÁO:</span> KIẾN TRÚC CISCO DNA CENTER
+                </h1>
+            </div>
+            <div class="hidden md:flex items-center gap-2 text-sm font-semibold text-green-400 bg-slate-800 px-3 py-1 rounded-full border border-slate-700">
+                <div class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
+                System Online
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="flex-grow w-full max-w-7xl mx-auto p-4 md:p-6 flex flex-col gap-6">
+        
+        <!-- Lời dẫn -->
+        <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+            <p class="text-sm md:text-base text-slate-600">
+                <strong class="text-blue-600">Chủ đề 6.2: Tự động hóa và Lập trình hóa.</strong> Cisco DNA Center đóng vai trò là "Bộ não" quản lý toàn bộ mạng. Giao tiếp phía trên <strong>(Northbound APIs)</strong> kết nối với ứng dụng/quản trị viên, và giao tiếp phía dưới <strong>(Southbound Interfaces - NETCONF/RESTCONF/CLI)</strong> cấu hình thiết bị mạng. <br>
+                <span class="text-xs text-slate-500 mt-1 block"><i class="fas fa-mobile-alt mr-1"></i> Trên thiết bị di động: Vuốt lên khu vực sơ đồ để cuộn xem thiết bị. Vuốt ngoài khu vực sơ đồ để cuộn trang.</span>
+            </p>
+        </div>
+
+        <!-- Sơ đồ Topology -->
+        <div class="bg-white rounded-xl shadow-md border border-slate-300 overflow-hidden relative">
+            <div class="bg-slate-50 border-b border-slate-200 px-4 py-2 flex justify-between items-center">
+                <h2 class="font-bold text-slate-700 text-sm"><i class="fas fa-sitemap mr-2 text-blue-500"></i> INTERACTIVE TOPOLOGY</h2>
+                <button onclick="resetSystem()" class="text-xs bg-red-100 hover:bg-red-200 text-red-700 px-3 py-1 rounded border border-red-200 transition-colors font-bold flex items-center gap-1">
+                    <i class="fas fa-power-off"></i> Reset
+                </button>
+            </div>
+            
+            <!-- Vùng Topology có thể cuộn trên mobile -->
+            <div class="topology-wrapper scrollbar-custom" id="topology-container">
+                <div class="topology-canvas" id="canvas">
+                    
+                    <!-- SVG Background for Links -->
+                    <svg class="absolute inset-0 w-full h-full z-0 pointer-events-none" id="links-svg">
+                        <!-- Northbound Link -->
+                        <line x1="500" y1="100" x2="500" y2="250" stroke="#cbd5e1" stroke-width="4" stroke-dasharray="8,8" class="transition-colors duration-500" id="link-north" />
+                        
+                        <!-- Southbound Links -->
+                        <path d="M 500 350 L 500 400 L 250 400 L 250 480" fill="none" stroke="#cbd5e1" stroke-width="4" stroke-dasharray="8,8" class="transition-colors duration-500" id="link-sw1" />
+                        <line x1="500" y1="350" x2="500" y2="480" stroke="#cbd5e1" stroke-width="4" stroke-dasharray="8,8" class="transition-colors duration-500" id="link-rt1" />
+                        <path d="M 500 350 L 500 400 L 750 400 L 750 480" fill="none" stroke="#cbd5e1" stroke-width="4" stroke-dasharray="8,8" class="transition-colors duration-500" id="link-ap1" />
+                    </svg>
+
+                    <!-- Lớp Northbound (App/Admin) -->
+                    <div class="absolute top-[40px] left-[500px] -translate-x-1/2 z-10 flex flex-col items-center gap-2">
+                        <div class="w-16 h-16 bg-slate-800 rounded-2xl flex items-center justify-center shadow-lg text-white node-hover">
+                            <i class="fas fa-laptop-code text-2xl"></i>
+                        </div>
+                        <span class="text-xs font-bold bg-white px-2 py-1 rounded shadow-sm border">Admin / Custom App</span>
+                        <span class="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded border border-blue-200 mt-2">REST APIs (Northbound)</span>
+                    </div>
+
+                    <!-- Lớp Controller (DNAC) -->
+                    <div id="node-dnac" class="absolute top-[250px] left-[500px] -translate-x-1/2 z-10 flex flex-col items-center gap-2">
+                        <div class="w-24 h-24 bg-gradient-to-br from-blue-600 to-blue-800 border-4 border-white rounded-3xl flex flex-col items-center justify-center shadow-2xl text-white node-hover relative">
+                            <i class="fas fa-brain text-4xl mb-1"></i>
+                            <span class="text-[10px] font-bold">DNA CENTER</span>
+                        </div>
+                        <span class="text-[10px] font-bold text-green-600 bg-green-50 px-2 py-0.5 rounded border border-green-200 mt-2">NETCONF/RESTCONF/CLI (Southbound)</span>
+                    </div>
+
+                    <!-- Lớp Southbound (Network Fabric) -->
+                    <!-- Core Switch -->
+                    <div id="node-sw" class="absolute top-[480px] left-[250px] -translate-x-1/2 z-10 flex flex-col items-center gap-2">
+                        <div class="w-16 h-16 bg-white border-2 border-slate-300 rounded-xl flex items-center justify-center shadow-md text-slate-600 node-hover transition-all duration-300">
+                            <i class="fas fa-server text-2xl"></i>
+                            <i class="fas fa-shield-halved absolute -top-2 -right-2 text-purple-500 opacity-0 transition-opacity" id="shield-sw"></i>
+                        </div>
+                        <span class="text-xs font-bold text-slate-600">Core-SW-01</span>
+                    </div>
+
+                    <!-- Edge Router -->
+                    <div id="node-rt" class="absolute top-[480px] left-[500px] -translate-x-1/2 z-10 flex flex-col items-center gap-2">
+                        <div class="w-16 h-16 bg-white border-2 border-slate-300 rounded-xl flex items-center justify-center shadow-md text-slate-600 node-hover transition-all duration-300">
+                            <i class="fas fa-route text-2xl"></i>
+                            <i class="fas fa-shield-halved absolute -top-2 -right-2 text-purple-500 opacity-0 transition-opacity" id="shield-rt"></i>
+                            <i class="fas fa-triangle-exclamation absolute -top-2 -left-2 text-red-500 opacity-0 transition-opacity text-lg" id="error-icon-rt"></i>
+                        </div>
+                        <span class="text-xs font-bold text-slate-600">Edge-Router</span>
+                    </div>
+
+                    <!-- Access Point -->
+                    <div id="node-ap" class="absolute top-[480px] left-[750px] -translate-x-1/2 z-10 flex flex-col items-center gap-2">
+                        <div class="w-16 h-16 bg-white border-2 border-slate-300 rounded-xl flex items-center justify-center shadow-md text-slate-600 node-hover transition-all duration-300">
+                            <i class="fas fa-wifi text-2xl"></i>
+                            <i class="fas fa-shield-halved absolute -top-2 -right-2 text-purple-500 opacity-0 transition-opacity" id="shield-ap"></i>
+                        </div>
+                        <span class="text-xs font-bold text-slate-600">Access-Point</span>
+                    </div>
+
+                    <!-- Container for dynamic packets -->
+                    <div id="animation-layer" class="absolute inset-0 pointer-events-none z-20"></div>
+
+                </div>
+            </div>
+        </div>
+
+        <!-- Control Panel & Console -->
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
+            
+            <!-- Control Panel -->
+            <div class="lg:col-span-5 bg-white rounded-xl shadow-md border border-slate-300 flex flex-col h-full">
+                <div class="bg-slate-50 border-b border-slate-200 px-4 py-3">
+                    <h2 class="font-bold text-slate-700 text-sm"><i class="fas fa-sliders mr-2 text-blue-500"></i> BẢNG ĐIỀU KHIỂN (GUI)</h2>
+                </div>
+                <div class="p-4 flex-grow flex flex-col gap-4">
+                    
+                    <div class="text-xs text-slate-500 font-semibold uppercase tracking-wider mb-1">Intent-Based Actions</div>
+                    
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <button onclick="simulateAction('discover')" class="bg-blue-50 hover:bg-blue-600 hover:text-white border border-blue-200 text-blue-700 px-4 py-3 rounded-lg flex items-center justify-between transition-all group shadow-sm">
+                            <span class="font-semibold text-sm">1. Discovery</span>
+                            <i class="fas fa-search group-hover:animate-bounce"></i>
+                        </button>
+                        
+                        <button onclick="simulateAction('provision')" class="bg-emerald-50 hover:bg-emerald-600 hover:text-white border border-emerald-200 text-emerald-700 px-4 py-3 rounded-lg flex items-center justify-between transition-all group shadow-sm">
+                            <span class="font-semibold text-sm">2. Provision</span>
+                            <i class="fas fa-file-code group-hover:scale-110"></i>
+                        </button>
+                        
+                        <button onclick="simulateAction('policy')" class="bg-purple-50 hover:bg-purple-600 hover:text-white border border-purple-200 text-purple-700 px-4 py-3 rounded-lg flex items-center justify-between transition-all group shadow-sm">
+                            <span class="font-semibold text-sm">3. Policy (SGT)</span>
+                            <i class="fas fa-shield-halved group-hover:scale-110"></i>
+                        </button>
+
+                        <button onclick="simulateAction('assurance')" class="bg-sky-50 hover:bg-sky-600 hover:text-white border border-sky-200 text-sky-700 px-4 py-3 rounded-lg flex items-center justify-between transition-all group shadow-sm">
+                            <span class="font-semibold text-sm">4. Assurance</span>
+                            <i class="fas fa-heart-pulse group-hover:animate-pulse"></i>
+                        </button>
+                    </div>
+
+                    <div class="mt-auto pt-4 border-t border-slate-100">
+                        <div class="text-xs text-slate-500 font-semibold uppercase tracking-wider mb-2">Simulate Errors</div>
+                        <button onclick="simulateError()" class="w-full bg-orange-50 hover:bg-orange-500 hover:text-white border border-orange-200 text-orange-700 px-4 py-2 rounded-lg flex items-center justify-center gap-2 transition-all shadow-sm font-bold text-sm">
+                            <i class="fas fa-bolt"></i> Giả lập đứt kết nối Router
+                        </button>
+                    </div>
+
+                </div>
+            </div>
+
+            <!-- CLI Console -->
+            <div class="lg:col-span-7 bg-[#0f172a] rounded-xl shadow-xl flex flex-col border border-slate-700 overflow-hidden min-h-[350px]">
+                <!-- Console Header -->
+                <div class="bg-[#1e293b] px-4 py-2 flex items-center justify-between border-b border-slate-700">
+                    <span class="text-slate-300 text-xs font-mono font-bold"><i class="fas fa-terminal mr-2 text-green-400"></i>DNAC Console</span>
+                    <div class="flex gap-1.5">
+                        <div class="w-3 h-3 rounded-full bg-slate-600"></div>
+                        <div class="w-3 h-3 rounded-full bg-slate-600"></div>
+                        <div class="w-3 h-3 rounded-full bg-slate-600"></div>
+                    </div>
+                </div>
+                
+                <!-- Console Output -->
+                <div id="cli-output" class="flex-grow p-4 font-mono text-xs md:text-sm text-green-400 overflow-y-auto scrollbar-custom space-y-1 bg-[#0f172a]" style="max-height: 400px;">
+                    <div class="text-slate-400">Cisco DNA Center System initialized.</div>
+                    <div class="text-slate-400">Version 2.3.3.x</div>
+                    <div>Type 'help' to see list of manual commands.</div>
+                    <div>&nbsp;</div>
+                </div>
+
+                <!-- Console Input -->
+                <div class="bg-[#0f172a] p-3 border-t border-slate-700 flex items-center font-mono text-sm">
+                    <span class="text-blue-400 font-bold mr-2">DNAC-Admin#</span>
+                    <input type="text" id="cli-input" class="flex-grow bg-transparent border-none outline-none text-green-400" placeholder="Nhập lệnh thủ công tại đây..." autocomplete="off">
+                </div>
+            </div>
+
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="bg-black text-white py-8 mt-auto border-t border-slate-800">
+        <div class="max-w-7xl mx-auto px-6 flex flex-col items-center justify-center text-center gap-2">
+            <h3 class="text-xl font-black tracking-widest text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-emerald-400">THE BÁO</h3>
+            <p class="text-xs text-slate-400 uppercase tracking-widest">Nền tảng Giáo dục Mạng Máy Tính Hiện Đại</p>
+            <div class="mt-4 text-[10px] text-slate-500 border-t border-slate-800 pt-4 w-full max-w-md">
+                Thiết kế bởi "THE BÁO" &copy; 2026.
+            </div>
+        </div>
+    </footer>
+
+    <!-- JavaScript Logic -->
+    <script>
+        // --- Trạng thái hệ thống ---
+        const state = {
+            discovered: false,
+            provisioned: false,
+            policy: false,
+            routerBroken: false
+        };
+
+        // --- DOM Elements ---
+        const cliOutput = document.getElementById('cli-output');
+        const cliInput = document.getElementById('cli-input');
+        const animLayer = document.getElementById('animation-layer');
+        const links = {
+            north: document.getElementById('link-north'),
+            sw: document.getElementById('link-sw1'),
+            rt: document.getElementById('link-rt1'),
+            ap: document.getElementById('link-ap1')
+        };
+        const nodes = {
+            dnac: document.getElementById('node-dnac').firstElementChild,
+            sw: document.getElementById('node-sw').firstElementChild,
+            rt: document.getElementById('node-rt').firstElementChild,
+            ap: document.getElementById('node-ap').firstElementChild
+        };
+
+        // --- Hàm xuất log ra Console ---
+        function logConsole(message, type = 'info') {
+            const div = document.createElement('div');
+            
+            if (type === 'cmd') {
+                div.innerHTML = `<span class="text-blue-400">DNAC-Admin#</span> <span class="text-white">${message}</span>`;
+            } else if (type === 'error') {
+                div.innerHTML = `<span class="text-red-500 font-bold">[ERROR]</span> <span class="text-red-400">${message}</span>`;
+            } else if (type === 'success') {
+                div.innerHTML = `<span class="text-emerald-500 font-bold">[OK]</span> ${message}`;
+            } else if (type === 'warn') {
+                div.innerHTML = `<span class="text-yellow-500 font-bold">[WARN]</span> ${message}`;
+            } else {
+                div.innerHTML = `<span class="text-slate-400">[SYS]</span> ${message}`;
+            }
+            
+            cliOutput.appendChild(div);
+            // Auto scroll xuống dưới cùng
+            cliOutput.scrollTop = cliOutput.scrollHeight;
+        }
+
+        // --- Xử lý nhập CLI thủ công ---
+        cliInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') {
+                const val = this.value.trim().toLowerCase();
+                if (!val) return;
+                
+                this.value = '';
+                logConsole(val, 'cmd');
+
+                switch(val) {
+                    case 'help':
+                        logConsole("Available commands: discover, provision, policy, assurance, clear, reset", 'info');
+                        break;
+                    case 'clear':
+                        cliOutput.innerHTML = '';
+                        break;
+                    case 'discover': simulateAction('discover'); break;
+                    case 'provision': simulateAction('provision'); break;
+                    case 'policy': simulateAction('policy'); break;
+                    case 'assurance': simulateAction('assurance'); break;
+                    case 'reset': resetSystem(); break;
+                    default:
+                        logConsole(`% Invalid input detected at '^' marker. Type 'help'.`, 'error');
+                }
+            }
+        });
+
+        // --- Hàm tạo Packet Animation (Dùng DOM element di chuyển bằng CSS) ---
+        function createPacket(pathType, direction, colorClass, iconClass, delay = 0) {
+            return new Promise(resolve => {
+                setTimeout(() => {
+                    const packet = document.createElement('div');
+                    packet.className = `absolute text-lg z-30 ${colorClass}`;
+                    packet.innerHTML = `<i class="${iconClass}"></i>`;
+                    
+                    // Xác định tọa độ theo pathType
+                    let startX, startY, endX, endY;
+
+                    if (pathType === 'north') {
+                        startX = 500; startY = 100;
+                        endX = 500; endY = 250;
+                    } else if (pathType === 'sw') {
+                        startX = 500; startY = 350;
+                        endX = 250; endY = 480;
+                    } else if (pathType === 'rt') {
+                        startX = 500; startY = 350;
+                        endX = 500; endY = 480;
+                    } else if (pathType === 'ap') {
+                        startX = 500; startY = 350;
+                        endX = 750; endY = 480;
+                    }
+
+                    // Đảo ngược nếu hướng lên (Up)
+                    if (direction === 'up') {
+                        [startX, endX] = [endX, startX];
+                        [startY, endY] = [endY, startY];
+                    }
+
+                    // CSS để di chuyển (Animation API)
+                    animLayer.appendChild(packet);
+                    
+                    const animation = packet.animate([
+                        { transform: `translate(${startX}px, ${startY}px) scale(1)`, opacity: 0 },
+                        { opacity: 1, offset: 0.1 },
+                        { transform: `translate(${endX}px, ${endY}px) scale(1.2)`, opacity: 1 },
+                        { transform: `translate(${endX}px, ${endY}px) scale(0)`, opacity: 0 }
+                    ], {
+                        duration: 1000,
+                        easing: 'ease-in-out',
+                        fill: 'forwards'
+                    });
+
+                    animation.onfinish = () => {
+                        packet.remove();
+                        resolve();
+                    };
+                }, delay);
+            });
+        }
+
+        // --- Logic Xử lý các Actions ---
+        async function simulateAction(action) {
+            
+            // Xử lý nút bấm -> sinh lệnh tự động trên console
+            if (event && event.type === 'click') {
+                logConsole(action, 'cmd');
+            }
+
+            if (action === 'discover') {
+                if (state.routerBroken) return alertRouterBroken('Discovery');
+
+                logConsole("Sending Discovery probes (CDP/LLDP/SNMP)...");
+                
+                // Animation: Admin -> DNAC
+                await createPacket('north', 'down', 'text-blue-500', 'fas fa-envelope');
+                
+                // Animation: DNAC -> Devices
+                links.north.setAttribute('stroke', '#3b82f6');
+                await Promise.all([
+                    createPacket('sw', 'down', 'text-blue-500', 'fas fa-search', 0),
+                    createPacket('rt', 'down', 'text-blue-500', 'fas fa-search', 200),
+                    createPacket('ap', 'down', 'text-blue-500', 'fas fa-search', 400)
+                ]);
+
+                // Highlight đường truyền và Node
+                ['sw', 'rt', 'ap'].forEach(id => {
+                    links[id].setAttribute('stroke', '#3b82f6');
+                    nodes[id].classList.replace('border-slate-300', 'border-blue-400');
+                    nodes[id].classList.replace('text-slate-600', 'text-blue-600');
+                });
+                
+                logConsole("Discovery complete. Found 3 devices in Fabric.", 'success');
+                state.discovered = true;
+            } 
+            else if (action === 'provision') {
+                if (!state.discovered) {
+                    flashErrorDNAC();
+                    logConsole("Khởi tạo thất bại: Chưa thực hiện Discovery. DNAC không biết thiết bị nào để cấu hình.", 'error');
+                    return;
+                }
+                if (state.routerBroken) return alertRouterBroken('Provision');
+
+                logConsole("Pushing Intent configurations (NETCONF/CLI)...");
+                
+                await createPacket('north', 'down', 'text-emerald-500', 'fas fa-box');
+                links.north.setAttribute('stroke', '#10b981');
+
+                await Promise.all([
+                    createPacket('sw', 'down', 'text-emerald-500', 'fas fa-file-code', 0),
+                    createPacket('rt', 'down', 'text-emerald-500', 'fas fa-file-code', 100),
+                    createPacket('ap', 'down', 'text-emerald-500', 'fas fa-file-code', 200)
+                ]);
+
+                ['sw', 'rt', 'ap'].forEach(id => {
+                    links[id].setAttribute('stroke', '#10b981');
+                    nodes[id].classList.replace('border-blue-400', 'border-emerald-500');
+                    nodes[id].classList.replace('text-blue-600', 'text-emerald-600');
+                });
+
+                logConsole("Provisioning successful. Network Fabric is active.", 'success');
+                state.provisioned = true;
+            }
+            else if (action === 'policy') {
+                if (!state.provisioned) {
+                    flashErrorDNAC();
+                    logConsole("Lỗi: Không thể đẩy Policy. Hệ thống chưa được Provision (Cấu hình cơ bản).", 'error');
+                    return;
+                }
+                if (state.routerBroken) return alertRouterBroken('Policy');
+
+                logConsole("Deploying Security Group Tags (SGT) & Micro-segmentation...");
+                
+                await createPacket('north', 'down', 'text-purple-500', 'fas fa-shield-halved');
+                
+                await Promise.all([
+                    createPacket('sw', 'down', 'text-purple-500', 'fas fa-lock', 0),
+                    createPacket('rt', 'down', 'text-purple-500', 'fas fa-lock', 0),
+                    createPacket('ap', 'down', 'text-purple-500', 'fas fa-lock', 0)
+                ]);
+
+                // Hiển thị icon Shield trên thiết bị
+                ['sw', 'rt', 'ap'].forEach(id => {
+                    document.getElementById(`shield-${id}`).classList.remove('opacity-0');
+                    document.getElementById(`shield-${id}`).classList.add('opacity-100');
+                });
+
+                logConsole("Security policies enforced across the fabric.", 'success');
+                state.policy = true;
+            }
+            else if (action === 'assurance') {
+                if (!state.discovered) {
+                    flashErrorDNAC();
+                    logConsole("Lỗi: Không có dữ liệu. Hãy chạy Discovery trước.", 'error');
+                    return;
+                }
+
+                logConsole("Collecting Telemetry (NetFlow, SNMP, Syslog)...");
+                
+                // Thu thập từ thiết bị lên DNAC (Up)
+                await Promise.all([
+                    createPacket('sw', 'up', 'text-sky-500', 'fas fa-chart-line', 0),
+                    !state.routerBroken ? createPacket('rt', 'up', 'text-sky-500', 'fas fa-chart-line', 100) : null,
+                    createPacket('ap', 'up', 'text-sky-500', 'fas fa-chart-line', 200)
+                ]);
+
+                // Báo cáo lên App (Up)
+                await createPacket('north', 'up', 'text-sky-500', 'fas fa-file-invoice');
+
+                if (state.routerBroken) {
+                    logConsole("Assurance Health Score: 66%. CRITICAL: Edge-Router unreachable!", 'warn');
+                } else {
+                    logConsole("Assurance Health Score: 100%. All telemetry is green.", 'success');
+                }
+            }
+        }
+
+        // --- Logic Giả lập lỗi & Cảnh báo ---
+        function flashErrorDNAC() {
+            nodes.dnac.classList.add('error-state');
+            setTimeout(() => nodes.dnac.classList.remove('error-state'), 1500);
+        }
+
+        function simulateError() {
+            if (!state.discovered) {
+                logConsole("Vui lòng chạy mạng bình thường (Discovery -> Provision) trước khi giả lập lỗi.", 'warn');
+                return;
+            }
+
+            logConsole("sim-fail --target Edge-Router", 'cmd');
+            logConsole("Mô phỏng: Edge-Router bị mất nguồn hoặc đứt cáp kết nối Nam-Bắc.", 'info');
+            
+            state.routerBroken = true;
+            
+            // Đứt cáp
+            links.rt.setAttribute('stroke', '#ef4444');
+            links.rt.setAttribute('stroke-dasharray', '2,10');
+            
+            // Thiết bị báo lỗi
+            nodes.rt.classList.add('error-state');
+            document.getElementById('error-icon-rt').classList.remove('opacity-0');
+            document.getElementById('error-icon-rt').classList.add('opacity-100');
+
+            // Gửi gói tin Syslog đỏ từ Router lên DNAC (Ví von: Gửi thư báo lỗi)
+            setTimeout(async () => {
+                logConsole("Syslog triggered from Edge-Router...", 'info');
+                await createPacket('rt', 'up', 'text-red-500', 'fas fa-envelope-open-text');
+                logConsole("DNAC nhận được bẫy lỗi (Trap). Mất kết nối NETCONF tới Edge-Router.", 'error');
+            }, 500);
+        }
+
+        function alertRouterBroken(action) {
+            flashErrorDNAC();
+            logConsole(`Tiến trình ${action} bị hủy. Trực quan hóa hậu quả: Edge-Router đang bị lỗi kết nối, DNAC không thể giao tiếp Southbound.`, 'error');
+            logConsole(`Hãy nhấn Reset cấu hình để khôi phục.`, 'warn');
+        }
+
+        // --- Logic Reset ---
+        function resetSystem() {
+            logConsole("system reset", 'cmd');
+            state.discovered = false;
+            state.provisioned = false;
+            state.policy = false;
+            state.routerBroken = false;
+
+            // Reset đường truyền
+            ['north', 'sw', 'rt', 'ap'].forEach(id => {
+                links[id].setAttribute('stroke', '#cbd5e1');
+                links[id].setAttribute('stroke-dasharray', '8,8');
+            });
+
+            // Reset thiết bị
+            ['sw', 'rt', 'ap'].forEach(id => {
+                nodes[id].className = 'w-16 h-16 bg-white border-2 border-slate-300 rounded-xl flex items-center justify-center shadow-md text-slate-600 node-hover transition-all duration-300';
+                
+                // Tắt khiên policy
+                const shield = document.getElementById(`shield-${id}`);
+                if(shield) { shield.classList.add('opacity-0'); shield.classList.remove('opacity-100'); }
+            });
+
+            // Tắt lỗi Router
+            nodes.rt.classList.remove('error-state');
+            const errIcon = document.getElementById('error-icon-rt');
+            if(errIcon) { errIcon.classList.add('opacity-0'); errIcon.classList.remove('opacity-100'); }
+
+            logConsole("System Reset. Trạng thái mạng đã trở về ban đầu.", 'success');
+        }
+
+        // Xử lý kéo thả cuộn ngang (Pan) cho Topology trên màn hình cảm ứng / chuột
+        const slider = document.getElementById('topology-container');
+        let isDown = false;
+        let startX;
+        let scrollLeft;
+        let startY;
+        let scrollTop;
+
+        slider.addEventListener('mousedown', (e) => {
+            isDown = true;
+            slider.style.cursor = 'grabbing';
+            startX = e.pageX - slider.offsetLeft;
+            scrollLeft = slider.scrollLeft;
+            startY = e.pageY - slider.offsetTop;
+            scrollTop = slider.scrollTop;
+        });
+        slider.addEventListener('mouseleave', () => {
+            isDown = false;
+            slider.style.cursor = 'grab';
+        });
+        slider.addEventListener('mouseup', () => {
+            isDown = false;
+            slider.style.cursor = 'grab';
+        });
+        slider.addEventListener('mousemove', (e) => {
+            if (!isDown) return;
+            e.preventDefault();
+            const x = e.pageX - slider.offsetLeft;
+            const walkX = (x - startX) * 2; // Tốc độ cuộn ngang
+            slider.scrollLeft = scrollLeft - walkX;
+            
+            const y = e.pageY - slider.offsetTop;
+            const walkY = (y - startY) * 2; // Tốc độ cuộn dọc
+            slider.scrollTop = scrollTop - walkY;
+        });
+
+    </script>
+</body>
+</html>

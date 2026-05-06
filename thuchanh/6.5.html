@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>THE BÁO: Tự động hóa và Lập trình hóa (6.5 - Puppet, Chef, Ansible)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        /* Custom Fonts cho CLI */
+        @import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;700&family=Inter:wght@400;600;700&display=swap');
+        
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6;
+        }
+
+        .font-cli {
+            font-family: 'Fira Code', monospace;
+        }
+
+        /* Tùy chỉnh thanh cuộn cho topology và CLI */
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #1f2937; 
+            border-radius: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #4b5563; 
+            border-radius: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: #6b7280; 
+        }
+
+        .topo-scrollbar::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        .topo-scrollbar::-webkit-scrollbar-track {
+            background: #e5e7eb; 
+        }
+        .topo-scrollbar::-webkit-scrollbar-thumb {
+            background: #9ca3af; 
+            border-radius: 4px;
+        }
+
+        /* Animation Keyframes */
+        @keyframes pushAnim {
+            0% { left: 15%; opacity: 1; transform: scale(1); }
+            50% { transform: scale(1.2); }
+            100% { left: 80%; opacity: 1; transform: scale(1); }
+        }
+
+        @keyframes pullReqAnim {
+            0% { left: 80%; opacity: 1; transform: scale(1); }
+            50% { transform: scale(1.2); }
+            100% { left: 15%; opacity: 1; transform: scale(1); }
+        }
+
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            10%, 30%, 50%, 70%, 90% { transform: translateX(-5px); }
+            20%, 40%, 60%, 80% { transform: translateX(5px); }
+        }
+
+        .animate-push {
+            display: flex !important;
+            animation: pushAnim 1.5s forwards cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .animate-pull-req {
+            display: flex !important;
+            animation: pullReqAnim 1.5s forwards cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .animate-error-shake {
+            animation: shake 0.5s;
+            border-color: #ef4444 !important; /* text-red-500 */
+            box-shadow: 0 0 15px rgba(239, 68, 68, 0.5);
+        }
+
+        .packet-icon {
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+            display: none;
+            z-index: 20;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col">
+
+    <!-- HEADER STICKY -->
+    <header class="sticky top-0 z-50 bg-slate-900 text-white shadow-lg border-b-4 border-blue-500">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex flex-col md:flex-row justify-between items-center">
+            <h1 class="text-xl md:text-2xl font-bold tracking-wide uppercase">
+                <span class="text-blue-400">THE BÁO:</span> Tự động hóa và Lập trình hóa (6.5)
+            </h1>
+            <div class="mt-2 md:mt-0 bg-slate-800 px-3 py-1 rounded-full text-sm font-semibold text-gray-300 border border-slate-700">
+                <i class="fas fa-network-wired mr-2 text-blue-400"></i> Puppet vs Chef vs Ansible
+            </div>
+        </div>
+    </header>
+
+    <!-- MAIN CONTENT -->
+    <main class="flex-grow max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-8 space-y-6">
+        
+        <!-- TOPOLOGY SECTION -->
+        <section class="bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden">
+            <div class="bg-gray-100 px-4 py-3 border-b border-gray-200 flex justify-between items-center">
+                <h2 class="font-bold text-gray-700 uppercase"><i class="fas fa-project-diagram mr-2 text-indigo-600"></i> Sơ đồ mạng tương tác</h2>
+                <span class="text-xs bg-indigo-100 text-indigo-800 px-2 py-1 rounded font-semibold border border-indigo-200">Khu vực cuộn độc lập</span>
+            </div>
+            
+            <!-- Khung cuộn Topology (50vh trên mobile) -->
+            <div class="relative w-full h-[50vh] md:h-[450px] overflow-auto topo-scrollbar bg-slate-50 cursor-grab active:cursor-grabbing">
+                <!-- Nội dung Topology cố định kích thước để không bị móp méo -->
+                <div class="absolute min-w-[800px] min-h-[400px] w-full h-full flex items-center justify-center">
+                    
+                    <!-- Dây mạng nối -->
+                    <div class="absolute w-[60%] h-1.5 bg-gray-300 top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-0 rounded-full"></div>
+
+                    <!-- Gói tin hoạt ảnh (Packet/Config) -->
+                    <div id="anim-packet" class="packet-icon">
+                        <i id="anim-icon" class="fas fa-file-code text-4xl text-blue-500 drop-shadow-md bg-white rounded-full p-1"></i>
+                        <span id="anim-label" class="mt-2 text-xs font-bold px-2 py-1 bg-white rounded-md shadow border text-gray-700 uppercase tracking-wider">Config Data</span>
+                    </div>
+
+                    <!-- Server Node (Control/Master) -->
+                    <div class="absolute left-[10%] flex flex-col items-center z-10">
+                        <div class="w-32 h-32 bg-indigo-600 rounded-xl flex items-center justify-center shadow-xl border-4 border-indigo-300 transition hover:scale-105">
+                            <i class="fas fa-server text-5xl text-white"></i>
+                        </div>
+                        <div class="mt-4 text-center bg-white px-4 py-2 rounded-lg shadow border border-gray-200">
+                            <h3 class="font-bold text-gray-800">Management Server</h3>
+                            <p id="server-role" class="text-xs text-indigo-600 font-semibold mt-1 uppercase">Control Node</p>
+                        </div>
+                    </div>
+
+                    <!-- Router Node (Target/Agent) -->
+                    <div class="absolute right-[10%] flex flex-col items-center z-10">
+                        <div id="target-router" class="w-32 h-32 bg-gray-700 rounded-xl flex items-center justify-center shadow-xl border-4 border-gray-400 transition-all duration-300">
+                            <i class="fas fa-router text-5xl text-white"></i>
+                        </div>
+                        <div class="mt-4 text-center bg-white px-4 py-2 rounded-lg shadow border border-gray-200">
+                            <h3 class="font-bold text-gray-800">Edge Router R1</h3>
+                            <p class="text-xs text-gray-500 mt-1">Managed Device</p>
+                            <div class="mt-2 flex items-center justify-center gap-2">
+                                <span id="router-status-dot" class="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse"></span>
+                                <span id="router-status-text" class="text-xs font-bold text-red-500 uppercase">Chưa cấu hình</span>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+        </section>
+
+        <!-- CONTROL & CLI SECTION -->
+        <section class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            
+            <!-- Left: Control Panel -->
+            <div class="lg:col-span-5 flex flex-col gap-4">
+                <div class="bg-white p-5 rounded-xl shadow-md border border-gray-200 flex-grow">
+                    <h3 class="font-bold text-gray-800 mb-4 pb-2 border-b uppercase flex items-center">
+                        <i class="fas fa-gamepad text-green-500 mr-2"></i> Bảng điều khiển (GUI)
+                    </h3>
+                    
+                    <div class="space-y-5">
+                        <!-- Chọn công cụ -->
+                        <div>
+                            <label class="block text-sm font-semibold text-gray-600 mb-3">1. Chọn phương thức quản lý:</label>
+                            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                <button onclick="triggerTool('ansible')" class="group relative p-3 border-2 border-gray-200 rounded-xl hover:border-red-500 hover:bg-red-50 transition text-center focus:outline-none">
+                                    <div class="font-bold text-gray-800 group-hover:text-red-600 text-lg">Ansible</div>
+                                    <div class="text-[10px] text-gray-500 uppercase mt-1">Mô hình Push</div>
+                                </button>
+                                <button onclick="triggerTool('puppet')" class="group relative p-3 border-2 border-gray-200 rounded-xl hover:border-blue-500 hover:bg-blue-50 transition text-center focus:outline-none">
+                                    <div class="font-bold text-gray-800 group-hover:text-blue-600 text-lg">Puppet</div>
+                                    <div class="text-[10px] text-gray-500 uppercase mt-1">Mô hình Pull</div>
+                                </button>
+                                <button onclick="triggerTool('chef')" class="group relative p-3 border-2 border-gray-200 rounded-xl hover:border-orange-500 hover:bg-orange-50 transition text-center focus:outline-none">
+                                    <div class="font-bold text-gray-800 group-hover:text-orange-600 text-lg">Chef</div>
+                                    <div class="text-[10px] text-gray-500 uppercase mt-1">Mô hình Pull</div>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Reset Button -->
+                        <div class="pt-2">
+                            <label class="block text-sm font-semibold text-gray-600 mb-3">2. Xử lý sự cố:</label>
+                            <button onclick="resetSim()" class="w-full bg-white border-2 border-red-200 text-red-600 hover:bg-red-50 hover:border-red-500 font-bold py-3 rounded-xl transition flex items-center justify-center gap-2 shadow-sm">
+                                <i class="fas fa-undo-alt"></i> RESET CẤU HÌNH MẠNG
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Theory Box -->
+                <div class="bg-blue-50 p-4 rounded-xl border border-blue-200 shadow-sm">
+                    <h4 class="font-bold text-blue-800 mb-2 text-sm uppercase"><i class="fas fa-info-circle mr-1"></i> Cơ chế hoạt động</h4>
+                    <p id="theory-text" class="text-sm text-blue-900 leading-relaxed">
+                        Hãy chọn một công cụ (Ansible, Puppet, hoặc Chef) hoặc nhập lệnh thủ công bên Terminal để xem sự khác biệt giữa cấu hình đẩy (Push) và kéo (Pull).
+                    </p>
+                </div>
+            </div>
+
+            <!-- Right: CLI Terminal -->
+            <div class="lg:col-span-7 flex flex-col">
+                <div class="bg-slate-900 rounded-xl shadow-xl flex-grow overflow-hidden flex flex-col border border-gray-700 h-[500px]">
+                    <!-- Window Header -->
+                    <div class="bg-slate-800 px-4 py-2 flex items-center justify-between border-b border-gray-700">
+                        <div class="flex gap-2">
+                            <div class="w-3 h-3 rounded-full bg-red-500 shadow-sm"></div>
+                            <div class="w-3 h-3 rounded-full bg-yellow-500 shadow-sm"></div>
+                            <div class="w-3 h-3 rounded-full bg-green-500 shadow-sm"></div>
+                        </div>
+                        <span class="text-xs text-gray-400 font-cli">admin@thebao-server: ~</span>
+                        <div class="w-12"></div> <!-- Spacer -->
+                    </div>
+                    
+                    <!-- Console Output -->
+                    <div id="cli-output" class="p-4 flex-grow overflow-y-auto custom-scrollbar font-cli text-sm bg-slate-900/95">
+                        <p class="text-green-400">Welcome to THE BÁO Network Automation Simulator v1.0</p>
+                        <p class="text-gray-400 mt-1">Type 'help' to see available commands.</p>
+                        <p class="text-gray-500">---------------------------------------------------</p>
+                        <div id="log-container" class="mt-2 space-y-1"></div>
+                    </div>
+
+                    <!-- Input Area -->
+                    <div class="bg-slate-950 p-3 flex items-center border-t border-gray-700 font-cli">
+                        <span class="text-green-400 mr-2 font-bold">admin@thebao$</span>
+                        <input type="text" id="cli-input" autocomplete="off" placeholder="Nhập lệnh thủ công tại đây..." class="bg-transparent border-none outline-none text-white w-full focus:ring-0 text-sm">
+                    </div>
+                </div>
+            </div>
+
+        </section>
+    </main>
+
+    <!-- FOOTER CHẠM ĐÁY -->
+    <footer class="bg-black text-gray-400 py-6 mt-auto border-t-4 border-gray-800">
+        <div class="max-w-7xl mx-auto px-4 text-center flex flex-col items-center">
+            <h2 class="text-xl font-bold text-white mb-2 tracking-widest">THE BÁO</h2>
+            <p class="text-sm">Chuyên gia Mạng Máy Tính & Lập trình Web</p>
+            <div class="mt-4 text-xs uppercase tracking-widest bg-gray-900 px-4 py-2 rounded-full border border-gray-700 text-gray-500">
+                Thiết kế bởi "THE BÁO"
+            </div>
+        </div>
+    </footer>
+
+    <!-- JAVASCRIPT LOGIC -->
+    <script>
+        // --- DATA & STATE ---
+        const toolsData = {
+            ansible: {
+                name: 'Ansible',
+                cmd: 'ansible-playbook configure_r1.yml',
+                type: 'push',
+                icon: 'fa-box',
+                color: 'text-red-500',
+                serverRole: 'Control Node',
+                desc: '<b>Ansible (Push):</b> Server trực tiếp gửi (đẩy) cấu hình qua kết nối SSH đến Router. Router không cần cài đặt phần mềm trung gian (Agentless).'
+            },
+            puppet: {
+                name: 'Puppet',
+                cmd: 'puppet agent -t',
+                type: 'pull',
+                icon: 'fa-scroll',
+                color: 'text-blue-500',
+                serverRole: 'Puppet Master',
+                desc: '<b>Puppet (Pull):</b> Router chạy phần mềm Puppet Agent. Agent sẽ chủ động kết nối về Server (Master) để yêu cầu (kéo) bản tin cấu hình (Manifest).'
+            },
+            chef: {
+                name: 'Chef',
+                cmd: 'chef-client',
+                type: 'pull',
+                icon: 'fa-utensils',
+                color: 'text-orange-500',
+                serverRole: 'Chef Server',
+                desc: '<b>Chef (Pull):</b> Tương tự Puppet, Router chạy Chef Client để kéo các "Recipe" cấu hình từ Chef Server về tự động áp dụng.'
+            }
+        };
+
+        let isAnimating = false;
+        let isConfigured = false;
+
+        // --- DOM ELEMENTS ---
+        const cliInput = document.getElementById('cli-input');
+        const logContainer = document.getElementById('log-container');
+        const cliOutput = document.getElementById('cli-output');
+        const routerBox = document.getElementById('target-router');
+        const routerDot = document.getElementById('router-status-dot');
+        const routerText = document.getElementById('router-status-text');
+        const animPacket = document.getElementById('anim-packet');
+        const animIcon = document.getElementById('anim-icon');
+        const animLabel = document.getElementById('anim-label');
+        const serverRole = document.getElementById('server-role');
+        const theoryText = document.getElementById('theory-text');
+
+        // --- CORE FUNCTIONS ---
+
+        // Hàm in Log ra màn hình Console
+        function addLog(message, type = 'normal') {
+            const p = document.createElement('p');
+            const time = new Date().toLocaleTimeString('vi-VN', { hour12: false });
+            
+            let colorClass = 'text-gray-300';
+            if(type === 'cmd') colorClass = 'text-yellow-300 font-bold';
+            if(type === 'success') colorClass = 'text-green-400';
+            if(type === 'error') colorClass = 'text-red-400';
+            if(type === 'info') colorClass = 'text-blue-300';
+
+            p.className = colorClass;
+            p.innerHTML = `<span class="text-gray-600">[${time}]</span> ${message}`;
+            
+            logContainer.appendChild(p);
+            cliOutput.scrollTop = cliOutput.scrollHeight; // Auto cuộn xuống dòng mới nhất
+        }
+
+        // Hàm Reset Trạng thái
+        function resetSim() {
+            if(isAnimating) return;
+            
+            isConfigured = false;
+            
+            // Reset UI Topology
+            routerBox.className = "w-32 h-32 bg-gray-700 rounded-xl flex items-center justify-center shadow-xl border-4 border-gray-400 transition-all duration-300";
+            routerDot.className = "w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse";
+            routerText.className = "text-xs font-bold text-red-500 uppercase";
+            routerText.innerText = "Chưa cấu hình";
+            
+            animPacket.className = "packet-icon"; // Ẩn packet
+            theoryText.innerHTML = "Hãy chọn một công cụ (Ansible, Puppet, hoặc Chef) hoặc nhập lệnh thủ công bên Terminal để xem sự khác biệt giữa cấu hình đẩy (Push) và kéo (Pull).";
+            serverRole.innerText = "Management Server";
+
+            addLog("Hệ thống mạng đã được reset về trạng thái ban đầu.", "info");
+            addLog("---------------------------------------------------");
+        }
+
+        // Hàm mô phỏng Hậu quả Lỗi (Error Consequence)
+        function triggerError(cmd) {
+            addLog(`admin@thebao$ ${cmd}`, "cmd");
+            addLog(`bash: ${cmd}: command not found. Lỗi cú pháp hoặc công cụ không được hỗ trợ!`, "error");
+            
+            // Hậu quả trực quan trên Topology
+            routerBox.classList.add('animate-error-shake');
+            routerDot.classList.replace('bg-green-500', 'bg-red-500');
+            routerText.innerText = "LỖI CÚ PHÁP!";
+            routerText.classList.replace('text-green-500', 'text-red-500');
+            
+            setTimeout(() => {
+                routerBox.classList.remove('animate-error-shake');
+                if(!isConfigured) {
+                    routerText.innerText = "Chưa cấu hình";
+                } else {
+                    routerDot.classList.replace('bg-red-500', 'bg-green-500');
+                    routerText.innerText = "Đã cấu hình";
+                    routerText.classList.replace('text-red-500', 'text-green-500');
+                }
+            }, 800);
+        }
+
+        // Hàm thực thi Logic Mô phỏng
+        async function triggerTool(toolKey) {
+            if(isAnimating) {
+                addLog("Hệ thống đang bận. Vui lòng đợi tiến trình trước kết thúc.", "error");
+                return;
+            }
+
+            const tool = toolsData[toolKey];
+            isAnimating = true;
+
+            // Update UI Theory
+            theoryText.innerHTML = tool.desc;
+            serverRole.innerText = tool.serverRole;
+
+            // Ghi log lệnh
+            addLog(`admin@thebao$ ${tool.cmd}`, "cmd");
+            addLog(`[${tool.name}] Khởi động tiến trình...`, "info");
+
+            // Setup Icon cho hoạt ảnh
+            animIcon.className = `fas ${tool.icon} text-4xl ${tool.color} drop-shadow-md bg-white rounded-full p-1`;
+            
+            if (tool.type === 'push') {
+                // PUSH MECHANISM (Ansible)
+                addLog(`[${tool.name}] Đang đẩy cấu hình (Playbook) trực tiếp đến Edge Router...`, "normal");
+                animLabel.innerText = "Push Playbook";
+                
+                // Kích hoạt hoạt ảnh bay từ trái sang phải
+                animPacket.className = "packet-icon animate-push";
+                
+                // Đợi hoạt ảnh xong (1.5s)
+                await new Promise(r => setTimeout(r, 1500));
+                animPacket.className = "packet-icon"; // Ẩn packet
+                
+                applyConfigSuccess(tool.name);
+
+            } else {
+                // PULL MECHANISM (Puppet / Chef)
+                addLog(`[${tool.name}] Agent trên Router đang gửi yêu cầu (Pull Request) đến Server...`, "normal");
+                
+                // 1. Hoạt ảnh Request bay từ Router về Server
+                animIcon.className = `fas fa-envelope text-4xl text-gray-500 drop-shadow-md bg-white rounded-full p-2`;
+                animLabel.innerText = "Pull Request";
+                animPacket.className = "packet-icon animate-pull-req";
+                
+                await new Promise(r => setTimeout(r, 1500));
+                
+                // 2. Server phản hồi cấu hình
+                addLog(`[${tool.name}] Server xác thực thành công. Đang tải cấu hình về Router...`, "info");
+                animIcon.className = `fas ${tool.icon} text-4xl ${tool.color} drop-shadow-md bg-white rounded-full p-1`;
+                animLabel.innerText = "Download Config";
+                animPacket.className = "packet-icon animate-push";
+                
+                await new Promise(r => setTimeout(r, 1500));
+                animPacket.className = "packet-icon"; // Ẩn packet
+                
+                applyConfigSuccess(tool.name);
+            }
+        }
+
+        // Cập nhật giao diện khi cấu hình thành công
+        function applyConfigSuccess(toolName) {
+            isConfigured = true;
+            isAnimating = false;
+            
+            // Đổi màu Router sang Xanh
+            routerBox.className = "w-32 h-32 bg-slate-800 rounded-xl flex items-center justify-center shadow-xl border-4 border-green-400 transition-all duration-300";
+            routerDot.className = "w-2.5 h-2.5 rounded-full bg-green-500";
+            routerText.className = "text-xs font-bold text-green-500 uppercase";
+            routerText.innerText = "Đã cấu hình";
+
+            addLog(`[${toolName}] Áp dụng cấu hình thành công!`, "success");
+            addLog("---------------------------------------------------");
+        }
+
+        // --- EVENT LISTENERS ---
+
+        // Lắng nghe sự kiện gõ Enter ở CLI
+        cliInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                const val = this.value.trim().toLowerCase();
+                this.value = ''; // Xóa ô nhập
+
+                if(!val) return;
+
+                if(val === 'clear') {
+                    logContainer.innerHTML = '';
+                    addLog("Console cleared.", "info");
+                    return;
+                }
+                if(val === 'reset') {
+                    addLog(`admin@thebao$ reset`, "cmd");
+                    resetSim();
+                    return;
+                }
+                if(val === 'help') {
+                    addLog(`admin@thebao$ help`, "cmd");
+                    addLog("Các lệnh hỗ trợ mô phỏng:", "info");
+                    addLog("- ansible-playbook : Mô phỏng cơ chế Ansible (Push)");
+                    addLog("- puppet agent -t  : Mô phỏng cơ chế Puppet (Pull)");
+                    addLog("- chef-client      : Mô phỏng cơ chế Chef (Pull)");
+                    addLog("- reset            : Khôi phục cấu hình mạng");
+                    addLog("- clear            : Xóa màn hình console");
+                    return;
+                }
+
+                // Kiểm tra xem lệnh có khớp với công cụ nào không
+                let matched = false;
+                for(let key in toolsData) {
+                    // Chấp nhận nếu gõ đúng lệnh cmd hoặc chỉ gõ tên công cụ
+                    if(val === toolsData[key].cmd.toLowerCase() || val.includes(key)) {
+                        triggerTool(key);
+                        matched = true;
+                        break;
+                    }
+                }
+
+                if(!matched) {
+                    triggerError(val);
+                }
+            }
+        });
+
+    </script>
+</body>
+</html>

@@ -1,0 +1,610 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>THE BÁO: Phần 4.5 - Quản lý cấu hình thiết bị qua TFTP/FTP</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        /* Tùy chỉnh thanh cuộn cho Terminal */
+        .scrollbar-hide::-webkit-scrollbar {
+            display: none;
+        }
+        .scrollbar-hide {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+        
+        .terminal-scroll::-webkit-scrollbar {
+            width: 8px;
+        }
+        .terminal-scroll::-webkit-scrollbar-track {
+            background: #1a202c; 
+        }
+        .terminal-scroll::-webkit-scrollbar-thumb {
+            background: #4a5568; 
+            border-radius: 4px;
+        }
+
+        /* Animation cho gói tin/file */
+        @keyframes moveRight {
+            0% { left: 25%; opacity: 1; transform: scale(1) translateY(-50%); }
+            50% { transform: scale(1.2) translateY(-50%); }
+            100% { left: 75%; opacity: 0; transform: scale(1) translateY(-50%); }
+        }
+        @keyframes moveLeft {
+            0% { left: 75%; opacity: 1; transform: scale(1) translateY(-50%); }
+            50% { transform: scale(1.2) translateY(-50%); }
+            100% { left: 25%; opacity: 0; transform: scale(1) translateY(-50%); }
+        }
+        @keyframes dropPacket {
+            0% { left: 25%; opacity: 1; top: 50%; }
+            40% { left: 50%; opacity: 1; top: 50%; }
+            100% { left: 50%; opacity: 0; top: 80%; transform: rotate(45deg); color: red; }
+        }
+        
+        .anim-backup { animation: moveRight 2s ease-in-out forwards; }
+        .anim-restore { animation: moveLeft 2s ease-in-out forwards; }
+        .anim-drop { animation: dropPacket 2s ease-in forwards; }
+
+        /* Hiệu ứng nhấp nháy cho con trỏ terminal */
+        .cursor-blink { animation: blink 1s step-end infinite; }
+        @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen flex flex-col font-sans text-gray-800">
+
+    <!-- Header Sticky -->
+    <header class="bg-blue-800 text-white shadow-lg sticky top-0 z-50">
+        <div class="container mx-auto px-4 py-3 flex items-center justify-between">
+            <h1 class="text-xl md:text-2xl font-bold truncate">
+                <i class="fa-solid fa-network-wired mr-2"></i> 
+                THE BÁO: Quản lý cấu hình qua TFTP/FTP
+            </h1>
+            <button onclick="resetLab()" class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded font-semibold text-sm transition shadow-md">
+                <i class="fa-solid fa-rotate-right mr-1"></i> Reset
+            </button>
+        </div>
+    </header>
+
+    <!-- Nội dung chính -->
+    <main class="flex-grow container mx-auto px-2 md:px-4 py-6 flex flex-col gap-6">
+        
+        <!-- Khu vực Topology (Sơ đồ) -->
+        <!-- Yêu cầu: 50vh trên mobile, có thể cuộn ngang/dọc, chạm vùng trắng để cuộn trang -->
+        <div class="bg-white rounded-lg shadow-md border border-gray-300 overflow-hidden">
+            <div class="bg-gray-200 px-4 py-2 border-b border-gray-300 font-semibold text-gray-700 flex justify-between">
+                <span><i class="fa-solid fa-sitemap mr-2"></i> Sơ đồ mạng (Topology)</span>
+                <span class="text-xs text-gray-500 font-normal mt-1">(Vuốt trong khung để xem toàn bộ sơ đồ)</span>
+            </div>
+            
+            <!-- Wrapper cuộn -->
+            <div class="w-full h-[50vh] md:h-[350px] overflow-auto relative bg-slate-50 touch-pan-x touch-pan-y" id="topology-wrapper">
+                <!-- Vùng chứa sơ đồ kích thước cố định để không bị móp méo -->
+                <div class="min-w-[800px] h-full relative mx-auto flex items-center justify-center">
+                    
+                    <!-- Đường dây kết nối -->
+                    <div class="absolute left-[25%] right-[25%] h-1 bg-gray-400 top-1/2 -translate-y-1/2 z-0"></div>
+
+                    <!-- Router R1 -->
+                    <div class="absolute left-[25%] top-1/2 -translate-x-1/2 -translate-y-1/2 z-10 flex flex-col items-center">
+                        <div class="w-20 h-20 bg-blue-600 rounded-full flex items-center justify-center shadow-lg border-4 border-white relative">
+                            <i class="fa-solid fa-route text-white text-3xl"></i>
+                            <div id="r1-status" class="absolute -top-2 -right-2 w-5 h-5 bg-red-500 rounded-full border-2 border-white"></div>
+                        </div>
+                        <div class="mt-2 font-bold text-lg bg-white px-2 py-1 rounded shadow text-center">
+                            R1 (Client)<br>
+                            <span class="text-xs text-gray-500" id="r1-ip">IP: Chưa cấu hình</span>
+                        </div>
+                    </div>
+
+                    <!-- Server S1 -->
+                    <div class="absolute left-[75%] top-1/2 -translate-x-1/2 -translate-y-1/2 z-10 flex flex-col items-center">
+                        <div class="w-20 h-24 bg-gray-700 rounded flex items-center justify-center shadow-lg border-4 border-white relative">
+                            <i class="fa-solid fa-server text-white text-3xl"></i>
+                            <div class="absolute -top-2 -right-2 w-5 h-5 bg-green-500 rounded-full border-2 border-white"></div>
+                        </div>
+                        <div class="mt-2 font-bold text-lg bg-white px-2 py-1 rounded shadow text-center">
+                            S1 (TFTP/FTP Server)<br>
+                            <span class="text-xs text-green-600">IP: 192.168.1.100</span>
+                        </div>
+                    </div>
+
+                    <!-- Gói tin / Hoạt ảnh bay -->
+                    <div id="data-packet" class="absolute top-1/2 left-[25%] -translate-x-1/2 -translate-y-1/2 z-20 hidden text-3xl transition-colors">
+                        <i class="fa-solid fa-file-code"></i>
+                    </div>
+
+                    <!-- Thông báo nổi trên sơ đồ -->
+                    <div id="topology-alert" class="absolute top-10 left-1/2 -translate-x-1/2 bg-red-100 border border-red-400 text-red-700 px-4 py-2 rounded shadow-lg hidden z-30 font-bold transition-opacity duration-300">
+                        <!-- Content -->
+                    </div>
+                    
+                    <!-- Bảng File trên Server -->
+                    <div class="absolute top-4 right-4 bg-white border border-gray-300 rounded p-2 shadow text-xs text-gray-600">
+                        <div class="font-bold border-b mb-1 pb-1"><i class="fa-solid fa-hard-drive"></i> S1 Storage</div>
+                        <div id="tftp-storage">TFTP: <span class="text-red-500">Trống</span></div>
+                        <div id="ftp-storage">FTP: <span class="text-red-500">Trống</span></div>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+
+        <!-- Bảng điều khiển & Console -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+            
+            <!-- Control Panel -->
+            <div class="bg-white rounded-lg shadow-md border border-gray-300 h-full flex flex-col">
+                <div class="bg-gray-200 px-4 py-2 border-b border-gray-300 font-semibold text-gray-700">
+                    <i class="fa-solid fa-gamepad mr-2"></i> Bảng điều khiển (Action Panel)
+                </div>
+                <div class="p-4 flex-grow flex flex-col gap-4">
+                    <p class="text-sm text-gray-600 italic mb-2">Sử dụng nút bấm để sinh lệnh tự động, hoặc gõ trực tiếp vào Console bên cạnh.</p>
+                    
+                    <div class="grid grid-cols-2 gap-3">
+                        <div class="col-span-2 text-sm font-bold text-blue-800 border-b pb-1">1. Cấu hình Cơ bản</div>
+                        <button onclick="btnAction('config_ip')" class="bg-blue-100 hover:bg-blue-200 text-blue-800 py-2 px-3 rounded border border-blue-300 text-sm font-semibold transition text-left">
+                            <i class="fa-solid fa-plug mr-1"></i> Bật & Đặt IP cho R1
+                        </button>
+                        <button onclick="btnAction('config_ftp')" class="bg-blue-100 hover:bg-blue-200 text-blue-800 py-2 px-3 rounded border border-blue-300 text-sm font-semibold transition text-left">
+                            <i class="fa-solid fa-user-shield mr-1"></i> Cấu hình User/Pass FTP
+                        </button>
+
+                        <div class="col-span-2 text-sm font-bold text-green-800 border-b pb-1 mt-2">2. Dịch vụ TFTP (Không cần xác thực)</div>
+                        <button onclick="btnAction('backup_tftp')" class="bg-green-100 hover:bg-green-200 text-green-800 py-2 px-3 rounded border border-green-300 text-sm font-semibold transition text-left">
+                            <i class="fa-solid fa-upload mr-1"></i> Backup to TFTP
+                        </button>
+                        <button onclick="btnAction('restore_tftp')" class="bg-emerald-100 hover:bg-emerald-200 text-emerald-800 py-2 px-3 rounded border border-emerald-300 text-sm font-semibold transition text-left">
+                            <i class="fa-solid fa-download mr-1"></i> Restore from TFTP
+                        </button>
+
+                        <div class="col-span-2 text-sm font-bold text-purple-800 border-b pb-1 mt-2">3. Dịch vụ FTP (Yêu cầu xác thực)</div>
+                        <button onclick="btnAction('backup_ftp')" class="bg-purple-100 hover:bg-purple-200 text-purple-800 py-2 px-3 rounded border border-purple-300 text-sm font-semibold transition text-left">
+                            <i class="fa-solid fa-cloud-arrow-up mr-1"></i> Backup to FTP
+                        </button>
+                        <button onclick="btnAction('restore_ftp')" class="bg-fuchsia-100 hover:bg-fuchsia-200 text-fuchsia-800 py-2 px-3 rounded border border-fuchsia-300 text-sm font-semibold transition text-left">
+                            <i class="fa-solid fa-cloud-arrow-down mr-1"></i> Restore from FTP
+                        </button>
+                    </div>
+
+                    <div class="mt-auto bg-yellow-50 p-3 rounded border border-yellow-200 text-xs text-yellow-800">
+                        <strong>Mẹo học tập:</strong> Hãy thử Backup TFTP <i>trước khi</i> cấu hình IP để xem hệ thống báo lỗi như thế nào.
+                    </div>
+                </div>
+            </div>
+
+            <!-- Console CLI -->
+            <div class="bg-gray-900 rounded-lg shadow-md border border-gray-700 h-full flex flex-col overflow-hidden min-h-[400px]">
+                <div class="bg-gray-800 px-4 py-2 border-b border-gray-700 font-semibold text-gray-300 flex justify-between items-center">
+                    <span><i class="fa-solid fa-terminal mr-2"></i> Console (R1)</span>
+                    <div class="flex space-x-2">
+                        <div class="w-3 h-3 rounded-full bg-red-500"></div>
+                        <div class="w-3 h-3 rounded-full bg-yellow-500"></div>
+                        <div class="w-3 h-3 rounded-full bg-green-500"></div>
+                    </div>
+                </div>
+                
+                <div class="p-4 flex-grow text-green-400 font-mono text-sm terminal-scroll overflow-y-auto" id="console-output" style="max-height: 400px;">
+                    <div>Cisco IOS Software, C1900 Software (C1900-UNIVERSALK9-M), Version 15.1(4)M4</div>
+                    <div>Copyright (c) 1986-2026 by Cisco Systems, Inc.</div>
+                    <br>
+                    <div>Press RETURN to get started.</div>
+                </div>
+
+                <div class="bg-gray-900 px-4 py-3 flex items-center border-t border-gray-700 font-mono text-sm">
+                    <span id="prompt" class="text-green-400 mr-2">R1></span>
+                    <input type="text" id="cli-input" class="flex-grow bg-transparent text-green-400 outline-none caret-green-400" autocomplete="off" spellcheck="false" autofocus>
+                </div>
+            </div>
+            
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="bg-black text-gray-400 py-6 mt-auto">
+        <div class="container mx-auto text-center px-4">
+            <p class="font-bold text-white tracking-widest uppercase mb-2">Thiết kế bởi THE BÁO</p>
+            <p class="text-sm">4.5 DIS.</p>
+            <p class="text-xs mt-2 opacity-50">&copy; 2026 THE BÁO. Phục vụ mục đích giáo dục mô phỏng.</p>
+        </div>
+    </footer>
+
+    <!-- JavaScript Script -->
+    <script>
+        // --- TRẠNG THÁI HỆ THỐNG (STATE) ---
+        let state = {
+            mode: '>', // '>', '#', '(config)#'
+            ipConfigured: false,
+            ftpConfigured: false,
+            tftpHasFile: false,
+            ftpHasFile: false,
+            isAnimating: false
+        };
+
+        const SERVER_IP = "192.168.1.100";
+        const ROUTER_IP = "192.168.1.1";
+
+        // --- DOM ELEMENTS ---
+        const consoleOutput = document.getElementById('console-output');
+        const cliInput = document.getElementById('cli-input');
+        const promptEl = document.getElementById('prompt');
+        
+        const r1Status = document.getElementById('r1-status');
+        const r1IpLabel = document.getElementById('r1-ip');
+        
+        const dataPacket = document.getElementById('data-packet');
+        const topologyAlert = document.getElementById('topology-alert');
+        
+        const tftpStorage = document.getElementById('tftp-storage');
+        const ftpStorage = document.getElementById('ftp-storage');
+
+        // --- HÀM TIỆN ÍCH CONSOLE ---
+        function printConsole(text, color = "text-green-400", isCommand = false) {
+            const div = document.createElement('div');
+            if (isCommand) {
+                div.innerHTML = `<span class="text-gray-400">R1${state.mode}</span> <span class="text-white">${text}</span>`;
+            } else {
+                div.className = color;
+                div.innerHTML = text.replace(/\n/g, '<br>');
+            }
+            consoleOutput.appendChild(div);
+            consoleOutput.scrollTop = consoleOutput.scrollHeight;
+        }
+
+        function updatePrompt() {
+            promptEl.innerText = `R1${state.mode}`;
+        }
+
+        // --- XỬ LÝ NHẬP LỆNH TỪ BÀN PHÍM ---
+        cliInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') {
+                const cmd = this.value.trim();
+                this.value = '';
+                
+                if (state.isAnimating) {
+                    printConsole("System is busy...", "text-yellow-400");
+                    return;
+                }
+
+                if (cmd === '') {
+                    printConsole("", "text-green-400", true);
+                    return;
+                }
+
+                printConsole(cmd, "", true);
+                processCommand(cmd.toLowerCase());
+            }
+        });
+
+        // --- BỘ XỬ LÝ LỆNH (PARSER) ---
+        function processCommand(cmd) {
+            // Chuyển mode
+            if (cmd === 'enable' || cmd === 'en') {
+                state.mode = '#';
+                updatePrompt();
+                return;
+            }
+            if (cmd === 'disable' || cmd === 'exit' && state.mode === '#') {
+                state.mode = '>';
+                updatePrompt();
+                return;
+            }
+            if ((cmd === 'configure terminal' || cmd === 'conf t') && state.mode === '#') {
+                state.mode = '(config)#';
+                updatePrompt();
+                return;
+            }
+            if ((cmd === 'exit' || cmd === 'end') && state.mode === '(config)#') {
+                state.mode = '#';
+                printConsole("%SYS-5-CONFIG_I: Configured from console by console");
+                updatePrompt();
+                return;
+            }
+
+            // Lệnh cấu hình IP (Rút gọn)
+            if (state.mode === '(config)#' && cmd.includes('ip address 192.168.1.1')) {
+                state.ipConfigured = true;
+                updateVisuals();
+                return;
+            }
+
+            // Lệnh cấu hình FTP
+            if (state.mode === '(config)#' && (cmd.startsWith('ip ftp username') || cmd.startsWith('ip ftp password'))) {
+                // Đơn giản hóa: gõ lệnh này coi như đã cấu hình xong cả 2
+                state.ftpConfigured = true;
+                return;
+            }
+
+            // Các lệnh Backup/Restore
+            if (state.mode === '#') {
+                if (cmd.startsWith('copy running-config tftp')) {
+                    executeBackup('tftp');
+                    return;
+                }
+                if (cmd.startsWith('copy tftp')) {
+                    executeRestore('tftp');
+                    return;
+                }
+                if (cmd.startsWith('copy running-config ftp')) {
+                    executeBackup('ftp');
+                    return;
+                }
+                if (cmd.startsWith('copy ftp')) {
+                    executeRestore('ftp');
+                    return;
+                }
+                if (cmd.startsWith('ping')) {
+                    if (state.ipConfigured) {
+                        printConsole("Type escape sequence to abort.\nSending 5, 100-byte ICMP Echos to 192.168.1.100, timeout is 2 seconds:\n!!!!!\nSuccess rate is 100 percent (5/5)");
+                    } else {
+                        printConsole("Type escape sequence to abort.\nSending 5, 100-byte ICMP Echos to 192.168.1.100, timeout is 2 seconds:\n.....\nSuccess rate is 0 percent (0/5)");
+                    }
+                    return;
+                }
+            }
+
+            // Lỗi sai mode hoặc không biết lệnh
+            printConsole(`% Invalid input detected at '^' marker.`, "text-red-400");
+        }
+
+        // --- HÀM THỰC THI QUA NÚT BẤM (MÔ PHỎNG GÕ LỆNH) ---
+        async function btnAction(action) {
+            if (state.isAnimating) return;
+            
+            cliInput.value = ''; // Xóa text thừa
+            
+            switch(action) {
+                case 'config_ip':
+                    if (state.mode !== '(config)#') {
+                        state.mode = '(config)#'; updatePrompt();
+                        printConsole("enable", "", true);
+                        printConsole("configure terminal", "", true);
+                    }
+                    printConsole("interface GigabitEthernet0/0", "", true);
+                    printConsole(`ip address ${ROUTER_IP} 255.255.255.0`, "", true);
+                    printConsole("no shutdown", "", true);
+                    state.ipConfigured = true;
+                    updateVisuals();
+                    printConsole("%LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up");
+                    break;
+                    
+                case 'config_ftp':
+                    if (state.mode !== '(config)#') {
+                        state.mode = '(config)#'; updatePrompt();
+                        printConsole("enable", "", true);
+                        printConsole("configure terminal", "", true);
+                    }
+                    printConsole("ip ftp username admin", "", true);
+                    printConsole("ip ftp password cisco123", "", true);
+                    state.ftpConfigured = true;
+                    printConsole("FTP authentication credentials configured.", "text-gray-400");
+                    break;
+
+                case 'backup_tftp':
+                    ensurePrivilegedMode();
+                    printConsole("copy running-config tftp:", "", true);
+                    executeBackup('tftp');
+                    break;
+
+                case 'restore_tftp':
+                    ensurePrivilegedMode();
+                    printConsole("copy tftp: running-config", "", true);
+                    executeRestore('tftp');
+                    break;
+                
+                case 'backup_ftp':
+                    ensurePrivilegedMode();
+                    printConsole("copy running-config ftp:", "", true);
+                    executeBackup('ftp');
+                    break;
+
+                case 'restore_ftp':
+                    ensurePrivilegedMode();
+                    printConsole("copy ftp: running-config", "", true);
+                    executeRestore('ftp');
+                    break;
+            }
+        }
+
+        function ensurePrivilegedMode() {
+            if (state.mode === '>') {
+                state.mode = '#'; updatePrompt();
+                printConsole("enable", "", true);
+            } else if (state.mode === '(config)#') {
+                state.mode = '#'; updatePrompt();
+                printConsole("exit", "", true);
+            }
+        }
+
+        // --- LOGIC BACKUP / RESTORE VÀ HIỆU ỨNG ---
+        async function executeBackup(protocol) {
+            state.isAnimating = true;
+            printConsole(`Address or name of remote host []? ${SERVER_IP}`);
+            printConsole(`Destination filename [r1-confg]? ${protocol.toUpperCase()}-Backup.cfg`);
+            
+            await sleep(500);
+
+            if (!state.ipConfigured) {
+                // Lỗi không có IP
+                triggerAnimation('drop', protocol, "Không có kết nối mạng (Lỗi IP)!");
+                await sleep(2000);
+                printConsole(`%Error opening ${protocol}://${SERVER_IP}/${protocol.toUpperCase()}-Backup.cfg (Timed out)`, "text-red-400");
+                state.isAnimating = false;
+                return;
+            }
+
+            if (protocol === 'ftp' && !state.ftpConfigured) {
+                // Lỗi thiếu xác thực FTP
+                triggerAnimation('drop', protocol, "Sai User/Pass FTP (Authentication Failed)!");
+                await sleep(2000);
+                printConsole(`%Error opening ${protocol}://${SERVER_IP}/${protocol.toUpperCase()}-Backup.cfg (Authentication failed)`, "text-red-400");
+                state.isAnimating = false;
+                return;
+            }
+
+            // Thành công
+            printConsole(`!!`);
+            triggerAnimation('backup', protocol);
+            await sleep(2000);
+            
+            printConsole(`1024 bytes copied in 0.124 secs (8258 bytes/sec)`);
+            if (protocol === 'tftp') {
+                state.tftpHasFile = true;
+                tftpStorage.innerHTML = `TFTP: <span class="text-green-600 font-bold">TFTP-Backup.cfg</span>`;
+            } else {
+                state.ftpHasFile = true;
+                ftpStorage.innerHTML = `FTP: <span class="text-purple-600 font-bold">FTP-Backup.cfg</span>`;
+            }
+            showTopologyAlert(`Backup qua ${protocol.toUpperCase()} thành công!`, "success");
+            state.isAnimating = false;
+        }
+
+        async function executeRestore(protocol) {
+            state.isAnimating = true;
+            printConsole(`Address or name of remote host []? ${SERVER_IP}`);
+            printConsole(`Source filename []? ${protocol.toUpperCase()}-Backup.cfg`);
+            printConsole(`Destination filename [running-config]? `);
+            
+            await sleep(500);
+
+            if (!state.ipConfigured) {
+                triggerAnimation('drop', protocol, "Không có kết nối mạng (Lỗi IP)!");
+                await sleep(2000);
+                printConsole(`%Error reading ${protocol}://${SERVER_IP}/${protocol.toUpperCase()}-Backup.cfg (Timed out)`, "text-red-400");
+                state.isAnimating = false;
+                return;
+            }
+
+            if (protocol === 'ftp' && !state.ftpConfigured) {
+                triggerAnimation('drop', protocol, "Sai User/Pass FTP (Authentication Failed)!");
+                await sleep(2000);
+                printConsole(`%Error reading ${protocol}://${SERVER_IP}/${protocol.toUpperCase()}-Backup.cfg (Authentication failed)`, "text-red-400");
+                state.isAnimating = false;
+                return;
+            }
+
+            // Kiểm tra xem file có trên server chưa
+            if ((protocol === 'tftp' && !state.tftpHasFile) || (protocol === 'ftp' && !state.ftpHasFile)) {
+                 triggerAnimation('drop', protocol, "File không tồn tại trên Server!");
+                 await sleep(2000);
+                 printConsole(`%Error reading ${protocol}://${SERVER_IP}/${protocol.toUpperCase()}-Backup.cfg (File not found)`, "text-red-400");
+                 state.isAnimating = false;
+                 return;
+            }
+
+            // Thành công
+            printConsole(`!!`);
+            triggerAnimation('restore', protocol);
+            await sleep(2000);
+            
+            printConsole(`1024 bytes copied in 0.112 secs (9142 bytes/sec)`);
+            printConsole(`%SYS-5-CONFIG_I: Configured from ${protocol} by console`);
+            showTopologyAlert(`Restore từ ${protocol.toUpperCase()} thành công!`, "success");
+            state.isAnimating = false;
+        }
+
+        // --- CÁC HÀM GIAO DIỆN & HOẠT ẢNH ---
+        function updateVisuals() {
+            if (state.ipConfigured) {
+                r1Status.className = "absolute -top-2 -right-2 w-5 h-5 bg-green-500 rounded-full border-2 border-white";
+                r1IpLabel.innerHTML = `IP: <span class="text-green-600">${ROUTER_IP}</span>`;
+            } else {
+                r1Status.className = "absolute -top-2 -right-2 w-5 h-5 bg-red-500 rounded-full border-2 border-white";
+                r1IpLabel.innerHTML = "IP: Chưa cấu hình";
+            }
+        }
+
+        function triggerAnimation(type, protocol, errorMsg = "") {
+            dataPacket.className = "absolute top-1/2 -translate-x-1/2 -translate-y-1/2 z-20 text-4xl";
+            
+            // Set icon và màu sắc dựa trên protocol
+            if (protocol === 'tftp') {
+                dataPacket.innerHTML = '<i class="fa-solid fa-file-export text-green-500 drop-shadow-md"></i>';
+            } else {
+                dataPacket.innerHTML = '<i class="fa-solid fa-file-shield text-purple-500 drop-shadow-md"></i>';
+            }
+
+            // Áp dụng class animation
+            // Bắt buộc reflow để restart animation
+            void dataPacket.offsetWidth; 
+
+            if (type === 'backup') {
+                dataPacket.classList.add('anim-backup');
+                dataPacket.style.display = 'block';
+            } else if (type === 'restore') {
+                dataPacket.classList.add('anim-restore');
+                dataPacket.style.display = 'block';
+            } else if (type === 'drop') {
+                dataPacket.innerHTML = '<i class="fa-solid fa-envelope-circle-xmark text-red-500 drop-shadow-md"></i>';
+                dataPacket.classList.add('anim-drop');
+                dataPacket.style.display = 'block';
+                if(errorMsg) showTopologyAlert(errorMsg, "error");
+            }
+
+            // Ẩn sau khi chạy xong
+            setTimeout(() => {
+                dataPacket.style.display = 'none';
+                dataPacket.classList.remove('anim-backup', 'anim-restore', 'anim-drop');
+            }, 2000);
+        }
+
+        function showTopologyAlert(msg, type) {
+            topologyAlert.innerHTML = type === "error" 
+                ? `<i class="fa-solid fa-triangle-exclamation"></i> ${msg}`
+                : `<i class="fa-solid fa-circle-check"></i> ${msg}`;
+                
+            topologyAlert.className = `absolute top-10 left-1/2 -translate-x-1/2 px-4 py-2 rounded shadow-lg z-30 font-bold transition-opacity duration-300 ${
+                type === "error" ? "bg-red-100 border-red-400 text-red-700" : "bg-green-100 border-green-400 text-green-700"
+            }`;
+            
+            topologyAlert.style.display = 'block';
+            topologyAlert.style.opacity = '1';
+            
+            setTimeout(() => {
+                topologyAlert.style.opacity = '0';
+                setTimeout(() => topologyAlert.style.display = 'none', 300);
+            }, 3000);
+        }
+
+        // --- HÀM RESET ---
+        function resetLab() {
+            state = {
+                mode: '>',
+                ipConfigured: false,
+                ftpConfigured: false,
+                tftpHasFile: false,
+                ftpHasFile: false,
+                isAnimating: false
+            };
+            updatePrompt();
+            updateVisuals();
+            tftpStorage.innerHTML = `TFTP: <span class="text-red-500">Trống</span>`;
+            ftpStorage.innerHTML = `FTP: <span class="text-red-500">Trống</span>`;
+            
+            consoleOutput.innerHTML = `
+                <div>Cisco IOS Software, C1900 Software (C1900-UNIVERSALK9-M), Version 15.1(4)M4</div>
+                <div>Copyright (c) 1986-2026 by Cisco Systems, Inc.</div>
+                <br>
+                <div class="text-yellow-400">--- HỆ THỐNG ĐÃ ĐƯỢC RESET ---</div>
+            `;
+            showTopologyAlert("Đã Reset trạng thái mạng về ban đầu!", "success");
+        }
+
+        // Helper
+        const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+        // Bắt đầu
+        updateVisuals();
+
+        // Focus vào input khi click vào vùng console
+        document.getElementById('console-output').parentElement.addEventListener('click', () => {
+            cliInput.focus();
+        });
+
+    </script>
+</body>
+</html>

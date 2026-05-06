@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>THE BÁO: [Phần 3.3] Định tuyến tĩnh (Static Routing IPv4 & IPv6)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f3f4f6; }
+        
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #e5e7eb; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb { background: #9ca3af; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #6b7280; }
+        .cli-scroll::-webkit-scrollbar-track { background: #111827; }
+        .cli-scroll::-webkit-scrollbar-thumb { background: #374151; }
+
+        /* Sơ đồ Topology Scrollable */
+        .topology-wrapper {
+            height: 50vh; 
+            overflow: auto;
+            touch-action: pan-x pan-y;
+            border: 1px solid #d1d5db;
+            background: radial-gradient(circle, #ffffff 0%, #f9fafb 100%);
+            position: relative;
+        }
+        @media (min-width: 768px) {
+            .topology-wrapper { height: 400px; }
+        }
+
+        .topology-container {
+            min-width: 900px;
+            min-height: 350px;
+            position: relative; /* Rất quan trọng để packet absolute bay đúng trong khung này */
+            margin: 0 auto;
+        }
+
+        /* Packet Animation */
+        .packet {
+            position: absolute;
+            width: 24px;
+            height: 24px;
+            background-color: #ef4444;
+            border-radius: 4px;
+            display: none;
+            z-index: 50;
+            transition: all 1s linear;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            /* Bỏ display: flex ở đây để tránh xung đột layout lúc init, dùng CSS JS xử lý hiển thị */
+            align-items: center;
+            justify-content: center;
+        }
+        .packet-reply { background-color: #3b82f6; }
+        
+        @keyframes explode {
+            0% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.5); background-color: #f59e0b; opacity: 0.8; }
+            100% { transform: scale(0); opacity: 0; }
+        }
+        .animate-explode { animation: explode 0.5s forwards; }
+
+        @keyframes pulse-node {
+            0% { transform: scale(1); filter: brightness(1); }
+            50% { transform: scale(1.1); filter: brightness(1.2) drop-shadow(0 0 8px rgba(59, 130, 246, 0.8)); }
+            100% { transform: scale(1); filter: brightness(1); }
+        }
+        .node-active .icon-wrap { animation: pulse-node 0.5s ease; color: #3b82f6; }
+
+        .typewriter { overflow: hidden; white-space: pre-wrap; margin: 0; }
+    </style>
+</head>
+<body class="flex flex-col min-h-screen text-gray-800">
+
+    <!-- Header Sticky -->
+    <header class="sticky top-0 z-40 bg-blue-800 text-white shadow-md border-b-4 border-yellow-400">
+        <div class="max-w-7xl mx-auto px-4 py-3 flex flex-col md:flex-row justify-between items-center gap-2">
+            <div>
+                <h1 class="text-xl md:text-2xl font-bold uppercase tracking-wide">
+                    <i class="fas fa-satellite-dish mr-2 text-yellow-400"></i> THE BÁO: KẾT NỐI IP
+                </h1>
+                <p class="text-sm text-blue-200">Phần 3.3: Cấu hình định tuyến tĩnh (Static Routing)</p>
+            </div>
+            <div class="flex gap-2">
+                <button onclick="resetLab()" class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-md font-semibold text-sm transition-colors shadow flex items-center">
+                    <i class="fas fa-undo-alt mr-2"></i> Reset Lab
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="flex-grow w-full max-w-7xl mx-auto p-4 flex flex-col gap-6">
+
+        <!-- Phần 1: Topology (Khung mô phỏng) -->
+        <div class="bg-white rounded-xl shadow-lg overflow-hidden flex flex-col">
+            <div class="bg-gray-100 border-b border-gray-200 px-4 py-2 flex justify-between items-center">
+                <h2 class="font-bold text-gray-700"><i class="fas fa-project-diagram mr-2 text-blue-600"></i>Sơ đồ mạng (Topology)</h2>
+                <span class="text-xs bg-gray-200 text-gray-600 px-2 py-1 rounded">Vuốt để xem toàn bộ sơ đồ</span>
+            </div>
+            
+            <div class="topology-wrapper" id="topology-wrapper">
+                <div class="topology-container" id="network-nodes">
+                    
+                    <!-- Lines Connectors -->
+                    <div class="absolute w-full top-[120px] left-0 flex items-center justify-between px-24 z-0">
+                        <div class="h-1 bg-gray-400 w-1/3 shadow"></div>
+                        <!-- WAN Link -->
+                        <div class="w-1/3 relative flex justify-center items-center">
+                            <div class="h-1 w-full bg-red-400 border-t-2 border-dashed border-red-600"></div>
+                            <div class="absolute -top-12 bg-white/90 border border-red-200 px-3 py-1 rounded text-center shadow-sm backdrop-blur-sm">
+                                <span class="block text-xs font-bold text-red-600"><i class="fas fa-bolt mr-1"></i>WAN Link</span>
+                                <span class="block text-[10px] font-mono text-gray-600">IPv4: 10.0.0.0/30</span>
+                                <span class="block text-[10px] font-mono text-gray-600">IPv6: 2001:db8:a::/64</span>
+                            </div>
+                        </div>
+                        <div class="h-1 bg-gray-400 w-1/3 shadow"></div>
+                    </div>
+
+                    <!-- Nút Mạng (Nodes) -->
+                    <div class="absolute inset-0 flex justify-between items-center px-10">
+                        <!-- PC1 -->
+                        <div class="flex flex-col items-center z-10 w-40" id="node-pc1">
+                            <div class="bg-white border-2 border-gray-300 p-3 rounded-xl shadow-md icon-wrap transition-all">
+                                <i class="fas fa-desktop text-5xl text-gray-700"></i>
+                            </div>
+                            <span class="font-bold mt-2 bg-gray-800 text-white px-3 py-1 rounded-full text-xs">PC 1</span>
+                            <div class="mt-2 text-center bg-blue-50 border border-blue-200 p-1.5 rounded w-full">
+                                <span class="block text-[11px] font-bold text-blue-800 border-b border-blue-200 pb-1 mb-1">LAN A</span>
+                                <span class="block text-[10px] font-mono text-gray-700">IPv4: 192.168.1.10/24</span>
+                                <span class="block text-[10px] font-mono text-gray-700">IPv6: 2001:db8:1::10/64</span>
+                            </div>
+                        </div>
+
+                        <!-- Router 1 -->
+                        <div class="flex flex-col items-center z-10 w-48" id="node-r1">
+                            <div class="bg-white border-2 border-blue-400 p-3 rounded-full shadow-lg icon-wrap transition-all relative">
+                                <i class="fas fa-hdd text-5xl text-blue-600"></i>
+                                <span class="absolute -top-2 -right-2 bg-green-500 w-4 h-4 rounded-full border-2 border-white animate-pulse"></span>
+                            </div>
+                            <span class="font-bold mt-2 bg-blue-600 text-white px-3 py-1 rounded-full text-xs">Router 1 (R1)</span>
+                            <div class="mt-2 w-full grid grid-cols-2 gap-1 text-center">
+                                <div class="bg-gray-100 p-1 rounded border border-gray-200">
+                                    <span class="block text-[9px] font-bold text-gray-500">Gi0/0 (LAN)</span>
+                                    <span class="block text-[9px] font-mono">192.168.1.1</span>
+                                </div>
+                                <div class="bg-red-50 p-1 rounded border border-red-200">
+                                    <span class="block text-[9px] font-bold text-red-500">Se0/0/0 (WAN)</span>
+                                    <span class="block text-[9px] font-mono text-red-700">10.0.0.1</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Router 2 -->
+                        <div class="flex flex-col items-center z-10 w-48" id="node-r2">
+                            <div class="bg-white border-2 border-blue-400 p-3 rounded-full shadow-lg icon-wrap transition-all relative">
+                                <i class="fas fa-hdd text-5xl text-blue-600"></i>
+                                <span class="absolute -top-2 -right-2 bg-green-500 w-4 h-4 rounded-full border-2 border-white animate-pulse"></span>
+                            </div>
+                            <span class="font-bold mt-2 bg-blue-600 text-white px-3 py-1 rounded-full text-xs">Router 2 (R2)</span>
+                            <div class="mt-2 w-full grid grid-cols-2 gap-1 text-center">
+                                <div class="bg-red-50 p-1 rounded border border-red-200">
+                                    <span class="block text-[9px] font-bold text-red-500">Se0/0/0 (WAN)</span>
+                                    <span class="block text-[9px] font-mono text-red-700">10.0.0.2</span>
+                                </div>
+                                <div class="bg-gray-100 p-1 rounded border border-gray-200">
+                                    <span class="block text-[9px] font-bold text-gray-500">Gi0/0 (LAN)</span>
+                                    <span class="block text-[9px] font-mono">192.168.2.1</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- PC2 -->
+                        <div class="flex flex-col items-center z-10 w-40" id="node-pc2">
+                            <div class="bg-white border-2 border-gray-300 p-3 rounded-xl shadow-md icon-wrap transition-all">
+                                <i class="fas fa-desktop text-5xl text-gray-700"></i>
+                            </div>
+                            <span class="font-bold mt-2 bg-gray-800 text-white px-3 py-1 rounded-full text-xs">PC 2</span>
+                            <div class="mt-2 text-center bg-green-50 border border-green-200 p-1.5 rounded w-full">
+                                <span class="block text-[11px] font-bold text-green-800 border-b border-green-200 pb-1 mb-1">LAN C</span>
+                                <span class="block text-[10px] font-mono text-gray-700">IPv4: 192.168.2.10/24</span>
+                                <span class="block text-[10px] font-mono text-gray-700">IPv6: 2001:db8:2::10/64</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Gói tin mô phỏng -->
+                    <div id="packet" class="packet">
+                        <i class="fas fa-envelope text-white text-[10px]"></i>
+                    </div>
+
+                </div>
+            </div>
+            
+            <!-- Hành động Ping -->
+            <div class="bg-gray-50 border-t border-gray-200 p-4 flex flex-wrap justify-center gap-4">
+                <button onclick="runPing('ipv4')" class="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2 rounded-full font-bold shadow-md transition transform hover:scale-105 active:scale-95 flex items-center">
+                    <i class="fas fa-paper-plane mr-2"></i> PING IPv4 (PC1 -> PC2)
+                </button>
+                <button onclick="runPing('ipv6')" class="bg-purple-600 hover:bg-purple-700 text-white px-6 py-2 rounded-full font-bold shadow-md transition transform hover:scale-105 active:scale-95 flex items-center">
+                    <i class="fas fa-space-shuttle mr-2"></i> PING IPv6 (PC1 -> PC2)
+                </button>
+            </div>
+        </div>
+
+        <!-- Phần 2: Control Panel & CLI -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            
+            <!-- Bảng điều khiển giao diện UI -->
+            <div class="bg-white rounded-xl shadow-lg overflow-hidden flex flex-col">
+                <div class="bg-gray-800 text-white px-4 py-3 flex items-center">
+                    <i class="fas fa-sliders-h mr-2 text-blue-400"></i>
+                    <h2 class="font-bold">Bảng Cấu Hình Nhanh (UI)</h2>
+                </div>
+                
+                <div class="p-5 flex-grow space-y-6">
+                    <div class="bg-blue-50 p-3 rounded border border-blue-100 text-sm text-blue-800 mb-2">
+                        <i class="fas fa-info-circle mr-1"></i> Sử dụng công cụ này hệ thống sẽ tự động gõ lệnh xuống Console.
+                    </div>
+
+                    <!-- Chọn Thiết Bị -->
+                    <div>
+                        <label class="block text-sm font-bold text-gray-700 mb-2">1. Chọn Router cần cấu hình:</label>
+                        <div class="flex gap-4">
+                            <label class="flex items-center cursor-pointer">
+                                <input type="radio" name="targetRouter" value="R1" checked class="form-radio text-blue-600 w-4 h-4">
+                                <span class="ml-2 font-semibold">Router 1</span>
+                            </label>
+                            <label class="flex items-center cursor-pointer">
+                                <input type="radio" name="targetRouter" value="R2" class="form-radio text-blue-600 w-4 h-4">
+                                <span class="ml-2 font-semibold">Router 2</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- Cấu hình IPv4 -->
+                    <div class="border border-gray-200 rounded-lg p-4 bg-gray-50">
+                        <h3 class="font-bold text-gray-800 mb-3 border-b pb-2"><span class="bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded text-xs mr-2">IPv4</span>Thêm Route tĩnh</h3>
+                        <div class="grid grid-cols-2 gap-3 mb-3">
+                            <div>
+                                <label class="text-xs font-semibold text-gray-600">Mạng đích (Destination)</label>
+                                <select id="ui-ipv4-dest" class="w-full mt-1 border border-gray-300 rounded p-1.5 text-sm focus:ring-2 focus:ring-blue-500">
+                                    <option value="192.168.2.0 255.255.255.0">192.168.2.0/24 (LAN C - PC2)</option>
+                                    <option value="192.168.1.0 255.255.255.0">192.168.1.0/24 (LAN A - PC1)</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="text-xs font-semibold text-gray-600">Next-hop IP</label>
+                                <select id="ui-ipv4-next" class="w-full mt-1 border border-gray-300 rounded p-1.5 text-sm focus:ring-2 focus:ring-blue-500">
+                                    <option value="10.0.0.2">10.0.0.2 (IP của R2)</option>
+                                    <option value="10.0.0.1">10.0.0.1 (IP của R1)</option>
+                                    <option value="192.168.1.10">192.168.1.10 (Lỗi cố ý)</option>
+                                </select>
+                            </div>
+                        </div>
+                        <button onclick="applyUIRoute('ipv4')" class="w-full bg-gray-800 hover:bg-black text-white py-1.5 rounded text-sm font-semibold transition">
+                            <i class="fas fa-terminal mr-1 text-green-400"></i> Sinh lệnh & Chạy
+                        </button>
+                    </div>
+
+                    <!-- Cấu hình IPv6 -->
+                    <div class="border border-gray-200 rounded-lg p-4 bg-gray-50">
+                        <h3 class="font-bold text-gray-800 mb-3 border-b pb-2"><span class="bg-purple-100 text-purple-800 px-2 py-0.5 rounded text-xs mr-2">IPv6</span>Thêm Route tĩnh</h3>
+                        <div class="grid grid-cols-2 gap-3 mb-3">
+                            <div>
+                                <label class="text-xs font-semibold text-gray-600">Mạng đích (Destination)</label>
+                                <select id="ui-ipv6-dest" class="w-full mt-1 border border-gray-300 rounded p-1.5 text-sm focus:ring-2 focus:ring-blue-500">
+                                    <option value="2001:db8:2::/64">2001:db8:2::/64 (LAN C - PC2)</option>
+                                    <option value="2001:db8:1::/64">2001:db8:1::/64 (LAN A - PC1)</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="text-xs font-semibold text-gray-600">Next-hop IPv6</label>
+                                <select id="ui-ipv6-next" class="w-full mt-1 border border-gray-300 rounded p-1.5 text-sm focus:ring-2 focus:ring-blue-500">
+                                    <option value="2001:db8:a::2">2001:db8:a::2 (IP của R2)</option>
+                                    <option value="2001:db8:a::1">2001:db8:a::1 (IP của R1)</option>
+                                    <option value="2001:db8:2::10">2001:db8:2::10 (Lỗi cố ý)</option>
+                                </select>
+                            </div>
+                        </div>
+                        <button onclick="applyUIRoute('ipv6')" class="w-full bg-gray-800 hover:bg-black text-white py-1.5 rounded text-sm font-semibold transition">
+                            <i class="fas fa-terminal mr-1 text-green-400"></i> Sinh lệnh & Chạy
+                        </button>
+                    </div>
+
+                </div>
+            </div>
+
+            <!-- Console CLI -->
+            <div class="bg-gray-900 rounded-xl shadow-lg flex flex-col h-[500px] border border-gray-700">
+                <div class="bg-black text-gray-300 px-4 py-2 flex justify-between items-center rounded-t-xl border-b border-gray-800">
+                    <span class="font-mono text-sm"><i class="fas fa-terminal mr-2"></i>Console CLI & Syslog</span>
+                    <button onclick="clearCLI()" class="text-gray-500 hover:text-white text-sm"><i class="fas fa-eraser mr-1"></i>Xóa</button>
+                </div>
+                
+                <div id="cli-output" class="p-4 flex-grow overflow-y-auto font-mono text-sm leading-relaxed cli-scroll space-y-1 text-gray-300">
+                    <div class="text-green-400">Cisco IOS Software, C2900 Software (C2900-UNIVERSALK9-M), Version 15.1(4)M4</div>
+                    <div>Copyright (c) 1986-2026 by THE BÁO</div>
+                    <br>
+                    <div class="text-yellow-400">%SYS-5-CONFIG_I: System initialized.</div>
+                    <div>Nhập lệnh thủ công hoặc dùng bảng điều khiển UI bên trái.</div>
+                    <div class="text-gray-500">Gợi ý lệnh: <span class="text-white bg-gray-800 px-1">ip route [đích] [subnet] [next-hop]</span></div>
+                    <br>
+                </div>
+
+                <div class="bg-black p-3 rounded-b-xl border-t border-gray-800 flex">
+                    <span id="cli-prompt" class="text-green-400 font-mono mr-2 font-bold">R1(config)#</span>
+                    <input type="text" id="cli-input" class="bg-transparent text-white font-mono w-full outline-none" autocomplete="off" placeholder="Gõ lệnh thủ công...">
+                </div>
+            </div>
+
+        </div>
+    </main>
+
+    <footer class="bg-black text-white text-center py-6 mt-8 shadow-inner border-t border-gray-800">
+        <div class="max-w-7xl mx-auto px-4">
+            <h3 class="font-bold text-xl tracking-widest text-yellow-400 mb-2">THE BÁO</h3>
+            <p class="text-gray-400 text-sm mb-4">Trình mô phỏng hệ thống mạng trực quan kết hợp CLI.</p>
+            <p class="text-xs text-gray-600">© 2026 Thiết kế bởi THE BÁO. Cấu trúc HTML duy nhất.</p>
+        </div>
+    </footer>
+
+    <!-- Logic Javascript -->
+    <script>
+        // Data State
+        let routingTable = { R1: { ipv4: [], ipv6: [] }, R2: { ipv4: [], ipv6: [] } };
+        const cliOutput = document.getElementById('cli-output');
+        const cliInput = document.getElementById('cli-input');
+        const cliPrompt = document.getElementById('cli-prompt');
+        const packetEl = document.getElementById('packet');
+        let isSimulating = false;
+        let currentFocusRouter = 'R1';
+
+        // Xử lý CLI Log
+        function appendLog(html, isCommand = false) {
+            const div = document.createElement('div');
+            if (isCommand) {
+                div.innerHTML = `<span class="text-green-400">${currentFocusRouter}(config)#</span> <span class="text-white">${html}</span>`;
+            } else {
+                div.innerHTML = html;
+            }
+            div.className = 'typewriter';
+            cliOutput.appendChild(div);
+            cliOutput.scrollTop = cliOutput.scrollHeight;
+        }
+
+        function clearCLI() {
+            cliOutput.innerHTML = '<div class="text-gray-500">Màn hình Console đã được làm sạch.</div><br>';
+        }
+
+        function resetLab() {
+            if(isSimulating) return;
+            routingTable = { R1: { ipv4: [], ipv6: [] }, R2: { ipv4: [], ipv6: [] } };
+            packetEl.style.display = 'none';
+            packetEl.className = 'packet';
+            clearCLI();
+            appendLog('<span class="text-red-400 font-bold">% Đã xóa toàn bộ cấu hình (Erase startup-config).</span>');
+            document.querySelectorAll('.node-active').forEach(el => el.classList.remove('node-active'));
+        }
+
+        document.querySelectorAll('input[name="targetRouter"]').forEach(radio => {
+            radio.addEventListener('change', (e) => {
+                currentFocusRouter = e.target.value;
+                cliPrompt.textContent = `${currentFocusRouter}(config)#`;
+            });
+        });
+
+        cliInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                const cmd = this.value.trim();
+                if (cmd) {
+                    appendLog(cmd, true);
+                    processCommand(cmd, currentFocusRouter);
+                    this.value = '';
+                }
+            }
+        });
+
+        function applyUIRoute(protocol) {
+            if(isSimulating) return;
+            const dest = document.getElementById(`ui-${protocol}-dest`).value;
+            const next = document.getElementById(`ui-${protocol}-next`).value;
+            const router = document.querySelector('input[name="targetRouter"]:checked').value;
+            
+            currentFocusRouter = router;
+            cliPrompt.textContent = `${currentFocusRouter}(config)#`;
+
+            let cmd = protocol === 'ipv4' ? `ip route ${dest} ${next}` : `ipv6 route ${dest} ${next}`;
+            appendLog(cmd, true);
+            processCommand(cmd, router);
+        }
+
+        function processCommand(cmd, router) {
+            const parts = cmd.replace(/\s+/g, ' ').split(' ');
+            if (parts[0] === 'ip' && parts[1] === 'route') {
+                if (parts.length >= 5) {
+                    routingTable[router].ipv4.push({ dest: parts[2], nextHop: parts[4] });
+                    appendLog(`<span class="text-blue-400">% Đã thêm IPv4 Route vào ${router} -> Đích: ${parts[2]}, Next-hop: ${parts[4]}</span>`);
+                } else {
+                    appendLog('<span class="text-red-400">% Incomplete command.</span>');
+                }
+            } else if (parts[0] === 'ipv6' && parts[1] === 'route') {
+                if (parts.length >= 4) {
+                    routingTable[router].ipv6.push({ dest: parts[2], nextHop: parts[3] });
+                    appendLog(`<span class="text-purple-400">% Đã thêm IPv6 Route vào ${router} -> Đích: ${parts[2]}, Next-hop: ${parts[3]}</span>`);
+                } else {
+                    appendLog('<span class="text-red-400">% Incomplete command.</span>');
+                }
+            } else {
+                appendLog(`<span class="text-red-400">% Invalid input.</span>`);
+            }
+        }
+
+        // --- CẬP NHẬT HÀM TÍNH TỌA ĐỘ MỚI (getBoundingClientRect) ---
+        // Đảm bảo Packet bay tuyệt đối chính xác nằm gọn trong khung Topology
+        function getCenterCoords(nodeId) {
+            const container = document.getElementById('network-nodes');
+            const targetNode = document.getElementById(nodeId).querySelector('.icon-wrap');
+            
+            // Lấy tọa độ hiển thị thực tế trên trình duyệt của container và node đích
+            const containerRect = container.getBoundingClientRect();
+            const targetRect = targetNode.getBoundingClientRect();
+            
+            // Tọa độ Packet (X,Y) = Tọa độ điểm đích trừ đi Tọa độ góc trên bên trái của Container
+            // Cộng thêm một nửa chiều rộng của Node đích để Packet nằm chính giữa.
+            // Trừ đi 12 (vì Packet có kích thước 24x24px, một nửa là 12) để căn tâm.
+            const x = (targetRect.left - containerRect.left) + (targetRect.width / 2) - 12;
+            const y = (targetRect.top - containerRect.top) + (targetRect.height / 2) - 12;
+
+            return { x, y };
+        }
+
+        function sleep(ms) {
+            return new Promise(resolve => setTimeout(resolve, ms));
+        }
+
+        async function movePacket(nodeId, duration = 1000) {
+            const coords = getCenterCoords(nodeId);
+            packetEl.style.transitionDuration = `${duration}ms`;
+            packetEl.style.left = `${coords.x}px`;
+            packetEl.style.top = `${coords.y}px`;
+            
+            // Cuộn tự động camera trên mobile theo gói tin
+            const topologyWrapper = document.getElementById('topology-wrapper');
+            const targetScrollX = coords.x - (topologyWrapper.offsetWidth / 2) + 12;
+            topologyWrapper.scrollTo({ left: targetScrollX, behavior: 'smooth' });
+
+            await sleep(duration);
+            const node = document.getElementById(nodeId);
+            node.classList.add('node-active');
+            setTimeout(() => node.classList.remove('node-active'), 500);
+            await sleep(200); 
+        }
+
+        function explodePacket(reason) {
+            appendLog(`<span class="text-red-500 font-bold bg-red-900/30 px-2 py-1 block my-1"><i class="fas fa-times-circle mr-1"></i>HẬU QUẢ: ${reason}</span>`);
+            packetEl.classList.add('animate-explode');
+            setTimeout(() => {
+                packetEl.style.display = 'none';
+                packetEl.classList.remove('animate-explode');
+                isSimulating = false;
+            }, 500);
+        }
+
+        async function runPing(protocol) {
+            if (isSimulating) return;
+            isSimulating = true;
+            
+            appendLog(`<br><span class="text-yellow-400 font-bold">--- BẮT ĐẦU PING ${protocol.toUpperCase()} PC1 -> PC2 ---</span>`);
+            
+            packetEl.className = 'packet flex'; // Khởi tạo và hiển thị packet
+            packetEl.style.display = 'flex';
+            
+            const p1 = protocol === 'ipv4' ? '192.168.2.0' : '2001:db8:2::/64';
+            const expectedNextHopR1 = protocol === 'ipv4' ? '10.0.0.2' : '2001:db8:a::2';
+            
+            const pReturn = protocol === 'ipv4' ? '192.168.1.0' : '2001:db8:1::/64';
+            const expectedNextHopR2 = protocol === 'ipv4' ? '10.0.0.1' : '2001:db8:a::1';
+
+            // Xuất phát từ PC1 (0ms transition để packet nhảy lập tức đến điểm phát)
+            const startCoords = getCenterCoords('node-pc1');
+            packetEl.style.transitionDuration = '0ms';
+            packetEl.style.left = `${startCoords.x}px`;
+            packetEl.style.top = `${startCoords.y}px`;
+            await sleep(50); // Chờ 1 chút để DOM cập nhật vị trí trước khi bay
+
+            appendLog(`[PC1] Gửi Request tới Gateway (R1)...`);
+            await movePacket('node-r1', 800);
+
+            appendLog(`[R1] Kiểm tra định tuyến tới <b>${p1}</b>...`);
+            await sleep(800);
+
+            const routesR1 = routingTable.R1[protocol];
+            const routeR1Match = routesR1.find(r => r.dest === p1);
+
+            if (!routeR1Match) {
+                explodePacket(`R1 không biết đường. Báo lỗi "Destination Host Unreachable". Gói tin bị DROP.`);
+                return;
+            }
+
+            if (routeR1Match.nextHop !== expectedNextHopR1) {
+                explodePacket(`R1 có route, nhưng Next-hop sai (${routeR1Match.nextHop}). Gói tin bị ném sai hướng và DROP.`);
+                return;
+            }
+
+            appendLog(`[R1] Tìm thấy đường! Forward sang R2...`);
+            await movePacket('node-r2', 1200);
+
+            appendLog(`[R2] Đích kết nối trực tiếp. Forward tới PC2...`);
+            await movePacket('node-pc2', 800);
+
+            appendLog(`<span class="text-blue-400">[PC2] Nhận Request! Tạo gói tin Reply màu xanh quay về...</span>`);
+            packetEl.classList.add('packet-reply');
+            packetEl.innerHTML = '<i class="fas fa-reply text-white text-[10px]"></i>';
+            await sleep(800);
+
+            appendLog(`[PC2] Gửi Reply tới Gateway (R2)...`);
+            await movePacket('node-r2', 800);
+
+            appendLog(`[R2] Kiểm tra định tuyến trả về <b>${pReturn}</b>...`);
+            await sleep(800);
+
+            const routesR2 = routingTable.R2[protocol];
+            const routeR2Match = routesR2.find(r => r.dest === pReturn);
+
+            if (!routeR2Match) {
+                explodePacket(`LỖI KINH ĐIỂN: R2 không có route trả lời về mạng ${pReturn}. Gói tin kẹt tại R2.`);
+                return;
+            }
+
+            if (routeR2Match.nextHop !== expectedNextHopR2) {
+                explodePacket(`R2 có route về, nhưng Next-hop trả sai. Gói tin không thể về đích.`);
+                return;
+            }
+
+            appendLog(`[R2] Tìm thấy đường về! Forward sang R1...`);
+            await movePacket('node-r1', 1200);
+
+            appendLog(`[R1] Đích kết nối trực tiếp. Forward về PC1...`);
+            await movePacket('node-pc1', 800);
+
+            appendLog(`<span class="text-green-400 font-bold bg-green-900/30 px-2 py-1 block my-1">
+                <i class="fas fa-check-circle mr-1"></i> THÀNH CÔNG: Ping Reply từ PC2 nhận được! Định tuyến 2 chiều hoàn hảo.
+            </span>`);
+            
+            setTimeout(() => {
+                packetEl.style.display = 'none';
+                isSimulating = false;
+            }, 1000);
+        }
+    </script>
+</body>
+</html>

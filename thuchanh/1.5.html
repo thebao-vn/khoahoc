@@ -1,0 +1,688 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>THE BÁO: 1.5 Cấu hình và xác minh địa chỉ IPv4 (Subnetting, VLSM)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Tối ưu hóa thanh cuộn */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        
+        /* Thanh cuộn riêng cho Console CLI */
+        .cli-scrollbar::-webkit-scrollbar-track { background: #1a202c; }
+        .cli-scrollbar::-webkit-scrollbar-thumb { background: #4a5568; }
+
+        /* Nền lưới kỹ thuật cho sơ đồ mạng */
+        .bg-grid {
+            background-size: 40px 40px;
+            background-image: 
+                linear-gradient(to right, rgba(0, 0, 0, 0.05) 1px, transparent 1px),
+                linear-gradient(to bottom, rgba(0, 0, 0, 0.05) 1px, transparent 1px);
+        }
+
+        /* Hoạt ảnh Phong bì đỏ (Báo lỗi/Drop) */
+        @keyframes dropError {
+            0% { transform: translateY(0) scale(1); opacity: 1; }
+            50% { transform: translateY(30px) scale(1.2); opacity: 1; }
+            100% { transform: translateY(60px) scale(0.8); opacity: 0; }
+        }
+        .animate-drop-error { animation: dropError 1.5s forwards ease-in; }
+
+        /* Hoạt ảnh Thiết bị hoạt động */
+        @keyframes pulse-device {
+            0%, 100% { filter: drop-shadow(0 0 5px rgba(59, 130, 246, 0.4)); }
+            50% { filter: drop-shadow(0 0 15px rgba(59, 130, 246, 0.8)); }
+        }
+        .active-device { animation: pulse-device 2.5s infinite; }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen flex flex-col font-sans text-gray-800">
+
+    <!-- Header (Sticky) -->
+    <header class="sticky top-0 z-50 bg-blue-800 text-white shadow-lg border-b-4 border-blue-500">
+        <div class="max-w-7xl mx-auto px-4 py-3 flex justify-between items-center">
+            <h1 class="text-base md:text-xl font-bold truncate">THE BÁO: 1.5 Cấu hình và xác minh địa chỉ IPv4 (Subnetting, VLSM)</h1>
+            <div class="hidden md:flex space-x-2">
+                <span class="bg-blue-900 px-3 py-1 rounded text-sm text-blue-100 shadow-inner font-mono">CCNA Lab</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="flex-grow flex flex-col w-full max-w-7xl mx-auto md:px-4 py-4 space-y-4">
+        
+        <!-- Scenario Brief -->
+        <div class="bg-white p-4 rounded-lg shadow-sm border border-gray-200 mx-2 md:mx-0">
+            <h2 class="font-bold text-gray-800 flex items-center mb-2">
+                <svg class="w-5 h-5 mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                Tình huống bài Lab (Scenario)
+            </h2>
+            <p class="text-sm text-gray-600">Công ty cấp dải mạng <strong class="text-blue-700 bg-blue-50 px-1 rounded">192.168.1.0/24</strong>. Bạn cần chia VLSM cho 2 mạng LAN:</p>
+            <ul class="list-disc pl-5 text-sm text-gray-700 mt-1 space-y-1">
+                <li><strong>LAN A (G0/0):</strong> Cần 50 Hosts <span class="text-xs text-gray-400 italic">(Gợi ý mượn 2 bit: /26 hoặc 255.255.255.192)</span></li>
+                <li><strong>LAN B (G0/1):</strong> Cần 20 Hosts <span class="text-xs text-gray-400 italic">(Gợi ý mượn 3 bit: /27 hoặc 255.255.255.224)</span></li>
+            </ul>
+        </div>
+
+        <!-- Sơ đồ mạng (Vuốt ngang trên Mobile) -->
+        <div class="relative bg-white border-y md:border border-gray-300 md:rounded-lg shadow-inner overflow-hidden flex flex-col">
+            <!-- Hướng dẫn trên Mobile -->
+            <div class="md:hidden absolute top-2 left-0 w-full text-center z-20 pointer-events-none">
+                <span class="bg-black/60 text-white text-[10px] px-3 py-1 rounded-full animate-pulse shadow-md">👆 Vuốt ngang khu vực này để xem sơ đồ</span>
+            </div>
+
+            <!-- Vùng chứa có thể cuộn ngang -->
+            <div class="w-full h-[45vh] md:h-[400px] overflow-x-auto overflow-y-hidden bg-grid relative scroll-smooth cursor-grab active:cursor-grabbing">
+                <!-- Khu vực Fix cứng kích thước chống móp méo -->
+                <div class="relative min-w-[800px] h-full mx-auto" id="canvas-area">
+                    
+                    <!-- Dây cáp kết nối (SVG) -->
+                    <svg class="absolute top-0 left-0 w-full h-full z-0 pointer-events-none">
+                        <!-- Nối PC-A đến Router -->
+                        <path d="M 200 200 L 400 200" stroke="#cbd5e1" stroke-width="5" fill="none" stroke-dasharray="10 5" class="animate-[dash_1s_linear_infinite]"></path>
+                        <!-- Nối Router đến PC-B -->
+                        <path d="M 400 200 L 600 200" stroke="#cbd5e1" stroke-width="5" fill="none" stroke-dasharray="10 5"></path>
+                    </svg>
+                    <style>@keyframes dash { to { stroke-dashoffset: -15; } }</style>
+
+                    <!-- Thiết bị: PC-A -->
+                    <div id="node-pca" class="absolute flex flex-col items-center justify-center transform -translate-x-1/2 -translate-y-1/2" style="left: 200px; top: 200px; z-index: 10;">
+                        <div class="w-16 h-16 bg-blue-50 rounded-lg border-[3px] border-blue-500 flex items-center justify-center shadow-lg active-device">
+                            <svg class="w-8 h-8 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path></svg>
+                        </div>
+                        <span class="mt-2 font-bold text-gray-800 bg-white/90 px-2 rounded shadow-sm text-sm">PC-A</span>
+                        <span class="text-[11px] text-blue-600 font-mono bg-white/90 px-1.5 rounded border border-blue-200 mt-0.5 shadow-sm" id="label-pca-ip">Chưa IP</span>
+                    </div>
+
+                    <!-- Thiết bị: Router R1 -->
+                    <div id="node-router" class="absolute flex flex-col items-center justify-center transform -translate-x-1/2 -translate-y-1/2" style="left: 400px; top: 200px; z-index: 10;">
+                        <!-- Tên cổng -->
+                        <div class="absolute -left-12 top-0 text-[10px] font-mono font-bold text-gray-600 bg-white px-1 border border-gray-300 rounded shadow-sm">G0/0</div>
+                        <div class="absolute -right-12 top-0 text-[10px] font-mono font-bold text-gray-600 bg-white px-1 border border-gray-300 rounded shadow-sm">G0/1</div>
+                        <!-- Đèn báo trạng thái cổng -->
+                        <div id="status-g0" class="absolute -left-4 top-1/2 transform -translate-y-1/2 w-3.5 h-3.5 bg-red-500 rounded-full border-2 border-white shadow-md transition-colors duration-300"></div>
+                        <div id="status-g1" class="absolute -right-4 top-1/2 transform -translate-y-1/2 w-3.5 h-3.5 bg-red-500 rounded-full border-2 border-white shadow-md transition-colors duration-300"></div>
+                        
+                        <div class="w-20 h-20 bg-gray-800 rounded-full border-4 border-gray-500 flex items-center justify-center shadow-xl active-device">
+                            <svg class="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 9l4-4 4 4m0 6l-4 4-4-4m-4-3h16"></path></svg>
+                        </div>
+                        <span class="mt-2 font-bold text-gray-800 bg-white/90 px-2 rounded shadow-sm text-sm">Router R1</span>
+                    </div>
+
+                    <!-- Thiết bị: PC-B -->
+                    <div id="node-pcb" class="absolute flex flex-col items-center justify-center transform -translate-x-1/2 -translate-y-1/2" style="left: 600px; top: 200px; z-index: 10;">
+                        <div class="w-16 h-16 bg-green-50 rounded-lg border-[3px] border-green-500 flex items-center justify-center shadow-lg active-device">
+                            <svg class="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path></svg>
+                        </div>
+                        <span class="mt-2 font-bold text-gray-800 bg-white/90 px-2 rounded shadow-sm text-sm">PC-B</span>
+                        <span class="text-[11px] text-green-700 font-mono bg-white/90 px-1.5 rounded border border-green-200 mt-0.5 shadow-sm" id="label-pcb-ip">Chưa IP</span>
+                    </div>
+
+                    <!-- Lớp Hoạt ảnh (Để bay gói tin & Phong bì lỗi) -->
+                    <div id="animation-layer" class="absolute top-0 left-0 w-full h-full pointer-events-none z-20"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Bảng điều khiển & CLI -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 px-2 md:px-0">
+            
+            <!-- Bảng nút bấm / Form nhập liệu -->
+            <div class="bg-white p-4 rounded-lg shadow-sm border border-gray-200 flex flex-col space-y-4">
+                <div class="flex justify-between items-center border-b pb-2">
+                    <h3 class="font-bold text-gray-800">Bảng Cấu Hình Thiết Bị</h3>
+                    <div class="space-x-2 flex">
+                        <button onclick="autoSolve()" class="text-[11px] md:text-xs bg-yellow-100 text-yellow-700 hover:bg-yellow-200 px-2 py-1.5 rounded border border-yellow-300 font-bold transition flex items-center shadow-sm">
+                            <svg class="w-3.5 h-3.5 mr-1" fill="currentColor" viewBox="0 0 20 20"><path d="M11 3a1 1 0 10-2 0v1a1 1 0 102 0V3zM15.657 5.757a1 1 0 00-1.414-1.414l-.707.707a1 1 0 001.414 1.414l.707-.707zM18 10a1 1 0 01-1 1h-1a1 1 0 110-2h1a1 1 0 011 1zM5.05 6.464A1 1 0 106.464 5.05l-.707-.707a1 1 0 00-1.414 1.414l.707.707zM5 10a1 1 0 01-1 1H3a1 1 0 110-2h1a1 1 0 011 1zM8 16v-1h4v1a2 2 0 11-4 0zM12 14c.015-.34.208-.646.477-.859a4 4 0 10-4.954 0c.27.213.462.519.476.859h4.002z"></path></svg>
+                            Giải nhanh
+                        </button>
+                        <button onclick="resetSystem()" class="text-[11px] md:text-xs bg-red-100 text-red-700 hover:bg-red-200 px-2 py-1.5 rounded border border-red-300 font-bold transition flex items-center shadow-sm">
+                            <svg class="w-3.5 h-3.5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                            Reset
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Cấu hình Router -->
+                <div class="bg-gray-50 p-3 rounded-md border border-gray-200 shadow-inner">
+                    <h4 class="text-sm font-bold text-gray-700 mb-2 border-b pb-1">🖲️ Cấu hình Router R1</h4>
+                    <div class="grid grid-cols-2 gap-3 mb-3">
+                        <div>
+                            <label class="text-[10px] uppercase font-bold text-gray-500 block mb-1">G0/0 (Cổng LAN A)</label>
+                            <input type="text" id="cfg-r-g0-ip" placeholder="IP Address (VD: 192.168.1.1)" class="w-full text-xs p-1.5 border border-gray-300 rounded mb-1.5 outline-none focus:ring-1 focus:ring-blue-500">
+                            <input type="text" id="cfg-r-g0-mask" placeholder="Mask (VD: /26 hoặc 255...)" class="w-full text-xs p-1.5 border border-gray-300 rounded mb-2 outline-none focus:ring-1 focus:ring-blue-500">
+                            <label class="flex items-center space-x-1.5 cursor-pointer bg-white p-1 border rounded w-max">
+                                <input type="checkbox" id="cfg-r-g0-state" class="w-3.5 h-3.5 accent-blue-600 cursor-pointer">
+                                <span class="text-[11px] font-bold text-gray-700">No Shutdown (Bật)</span>
+                            </label>
+                        </div>
+                        <div>
+                            <label class="text-[10px] uppercase font-bold text-gray-500 block mb-1">G0/1 (Cổng LAN B)</label>
+                            <input type="text" id="cfg-r-g1-ip" placeholder="IP Address (VD: 192.168.1.65)" class="w-full text-xs p-1.5 border border-gray-300 rounded mb-1.5 outline-none focus:ring-1 focus:ring-green-500">
+                            <input type="text" id="cfg-r-g1-mask" placeholder="Mask (VD: /27 hoặc 255...)" class="w-full text-xs p-1.5 border border-gray-300 rounded mb-2 outline-none focus:ring-1 focus:ring-green-500">
+                            <label class="flex items-center space-x-1.5 cursor-pointer bg-white p-1 border rounded w-max">
+                                <input type="checkbox" id="cfg-r-g1-state" class="w-3.5 h-3.5 accent-green-600 cursor-pointer">
+                                <span class="text-[11px] font-bold text-gray-700">No Shutdown (Bật)</span>
+                            </label>
+                        </div>
+                    </div>
+                    <button onclick="applyRouterConfig()" class="w-full bg-gray-800 text-white text-xs md:text-sm py-2 rounded hover:bg-black transition font-semibold shadow-md active:scale-[0.99]">
+                        Lưu cấu hình vào Router
+                    </button>
+                </div>
+
+                <!-- Cấu hình PCs -->
+                <div class="grid grid-cols-2 gap-3">
+                    <div class="bg-blue-50 p-3 rounded-md border border-blue-200">
+                        <h4 class="text-sm font-bold text-blue-800 mb-2 border-b border-blue-200 pb-1">💻 PC-A</h4>
+                        <input type="text" id="cfg-pca-ip" placeholder="IP Address" class="w-full text-xs p-1.5 border border-blue-300 rounded mb-1.5 outline-none focus:ring-1 focus:ring-blue-500">
+                        <input type="text" id="cfg-pca-mask" placeholder="Subnet Mask (/26)" class="w-full text-xs p-1.5 border border-blue-300 rounded mb-1.5 outline-none focus:ring-1 focus:ring-blue-500">
+                        <input type="text" id="cfg-pca-gw" placeholder="Default Gateway" class="w-full text-xs p-1.5 border border-blue-300 rounded mb-2 outline-none focus:ring-1 focus:ring-blue-500">
+                        <button onclick="applyPCConfig('A')" class="w-full bg-blue-600 text-white text-xs py-1.5 rounded hover:bg-blue-700 transition font-bold shadow active:scale-[0.98]">Lưu PC-A</button>
+                    </div>
+                    <div class="bg-green-50 p-3 rounded-md border border-green-200">
+                        <h4 class="text-sm font-bold text-green-800 mb-2 border-b border-green-200 pb-1">💻 PC-B</h4>
+                        <input type="text" id="cfg-pcb-ip" placeholder="IP Address" class="w-full text-xs p-1.5 border border-green-300 rounded mb-1.5 outline-none focus:ring-1 focus:ring-green-500">
+                        <input type="text" id="cfg-pcb-mask" placeholder="Subnet Mask (/27)" class="w-full text-xs p-1.5 border border-green-300 rounded mb-1.5 outline-none focus:ring-1 focus:ring-green-500">
+                        <input type="text" id="cfg-pcb-gw" placeholder="Default Gateway" class="w-full text-xs p-1.5 border border-green-300 rounded mb-2 outline-none focus:ring-1 focus:ring-green-500">
+                        <button onclick="applyPCConfig('B')" class="w-full bg-green-600 text-white text-xs py-1.5 rounded hover:bg-green-700 transition font-bold shadow active:scale-[0.98]">Lưu PC-B</button>
+                    </div>
+                </div>
+
+                <!-- Test Ping -->
+                <div class="flex items-center space-x-2 pt-3 border-t mt-auto">
+                    <select id="ping-src" class="text-xs md:text-sm border border-gray-300 rounded p-2 bg-gray-50 font-bold outline-none cursor-pointer">
+                        <option value="pca">Từ PC-A</option>
+                        <option value="pcb">Từ PC-B</option>
+                    </select>
+                    <span class="text-gray-400 font-bold">➔</span>
+                    <select id="ping-dst" class="text-xs md:text-sm border border-gray-300 rounded p-2 bg-gray-50 flex-1 font-bold outline-none cursor-pointer">
+                        <option value="pcb">Đến PC-B</option>
+                        <option value="pca">Đến PC-A</option>
+                        <option value="gw">Đến Gateway của nó</option>
+                        <option value="8.8.8.8">Đến Internet (8.8.8.8)</option>
+                    </select>
+                    <button onclick="triggerPingFromUI()" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded shadow-md transition transform active:scale-95 text-sm flex items-center">
+                        <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                        PING!
+                    </button>
+                </div>
+            </div>
+
+            <!-- Màn hình CLI Console -->
+            <div class="bg-gray-900 rounded-lg shadow-xl flex flex-col h-[400px] border border-gray-700 font-mono text-sm overflow-hidden">
+                <div class="bg-gray-800 text-gray-400 px-3 py-2 text-xs border-b border-gray-700 flex justify-between items-center shadow-md">
+                    <span class="font-bold flex items-center"><svg class="w-4 h-4 mr-1 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M4 18h16a2 2 0 002-2V6a2 2 0 00-2-2H4a2 2 0 00-2 2v10a2 2 0 002 2z"></path></svg> Console CLI & Syslog</span>
+                    <button onclick="clearConsole()" class="hover:text-white transition bg-gray-700 px-2 py-0.5 rounded">Xóa Log</button>
+                </div>
+                <!-- Vùng hiển thị -->
+                <div id="cli-output" class="flex-grow p-3 overflow-y-auto text-green-400 cli-scrollbar whitespace-pre-wrap leading-relaxed text-[13px]"></div>
+                <!-- Vùng nhập lệnh -->
+                <div class="flex items-center px-3 py-3 border-t border-gray-700 bg-black text-green-400 relative">
+                    <span id="cli-prompt" class="mr-2 font-bold text-green-500">PC-A></span>
+                    <input type="text" id="cli-input" class="flex-grow bg-transparent outline-none text-green-400 placeholder-green-800 caret-green-500" autocomplete="off" spellcheck="false" placeholder="Thử tự gõ: ping 192.168.1.70">
+                </div>
+            </div>
+
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="bg-black text-gray-400 text-center py-5 text-sm mt-8 border-t-4 border-blue-600 shadow-inner">
+        <p>Mô phỏng Định tuyến IPv4, VLSM & Cơ chế Lỗi mạng</p>
+        <p class="mt-1 font-bold text-gray-300">Thiết kế bởi "THE BÁO"</p>
+    </footer>
+
+    <!-- LOGIC MẠNG & HOẠT ẢNH JAVASCRIPT -->
+    <script>
+        /* === 1. THƯ VIỆN TOÁN HỌC IP & SUBNETTING === */
+        function ip2long(ip) {
+            let parts = ip.split('.');
+            if (parts.length !== 4) return null;
+            let res = 0;
+            for (let i = 0; i < 4; i++) {
+                let num = parseInt(parts[i].trim(), 10);
+                if (isNaN(num) || num < 0 || num > 255) return null;
+                res = (res << 8) + num;
+            }
+            return res >>> 0;
+        }
+
+        function long2ip(long) {
+            return [(long >>> 24) & 255, (long >>> 16) & 255, (long >>> 8) & 255, long & 255].join('.');
+        }
+
+        function getNetInfo(ipStr, maskStr) {
+            if(!ipStr || !maskStr) return null;
+            
+            // Xử lý thông minh: Hiểu định dạng CIDR (VD: /26 hoặc 26) thành Mask nhị phân (255.255.255.192)
+            let cleanMask = maskStr.trim();
+            if (cleanMask.startsWith('/') || cleanMask.length <= 2) {
+                let bitCount = parseInt(cleanMask.replace('/', ''), 10);
+                if (!isNaN(bitCount) && bitCount >= 0 && bitCount <= 32) {
+                    let maskLong = bitCount === 0 ? 0 : (0xFFFFFFFF << (32 - bitCount)) >>> 0;
+                    cleanMask = long2ip(maskLong);
+                }
+            }
+
+            const ip = ip2long(ipStr);
+            const mask = ip2long(cleanMask);
+            if (ip === null || mask === null) return null;
+            
+            // Bitwise kiểm tra tính hợp lệ của Subnet Mask (phải là chuỗi 1 liên tiếp rồi đến 0)
+            if ((~mask + 1) & (~mask)) return null; 
+            
+            const net = (ip & mask) >>> 0;
+            const bcast = (net | (~mask)) >>> 0;
+            return { ip, mask, net, bcast, ipStr, maskStr: cleanMask, netStr: long2ip(net), bcastStr: long2ip(bcast) };
+        }
+
+        // Kỹ thuật kiểm tra chồng chéo (Overlap) dải IP
+        function isOverlap(net1, net2) {
+            return Math.max(net1.net, net2.net) <= Math.min(net1.bcast, net2.bcast);
+        }
+
+        /* === 2. QUẢN LÝ TRẠNG THÁI HỆ THỐNG === */
+        let state = {
+            pca: { ip: '', mask: '', gw: '', longIp: null },
+            pcb: { ip: '', mask: '', gw: '', longIp: null },
+            router: {
+                g0: { ip: '', mask: '', active: false, netInfo: null },
+                g1: { ip: '', mask: '', active: false, netInfo: null }
+            }
+        };
+
+        const DOM = {
+            out: document.getElementById('cli-output'),
+            input: document.getElementById('cli-input'),
+            prompt: document.getElementById('cli-prompt'),
+            layer: document.getElementById('animation-layer')
+        };
+
+        // Tọa độ cứng (Vì khung SVG Fix min-w 800px, min-h 400px)
+        const POS = {
+            pca: { x: 200, y: 200 },
+            router: { x: 400, y: 200 },
+            pcb: { x: 600, y: 200 }
+        };
+
+        window.onload = () => {
+            logSys("Hệ điều hành Mạng khởi động...");
+            logSys("Nạp cấu hình NVRAM: [Trống]. Các cổng mạng đang ở trạng thái TẮT.");
+            logSys("💡 Mẹo: Bấm nút 'Giải nhanh' để tự động cấu hình và xem lệnh sinh ra!");
+            updateUI();
+            
+            document.getElementById('ping-src').addEventListener('change', (e) => {
+                DOM.prompt.innerText = `PC-${e.target.value === 'pca' ? 'A' : 'B'}>`;
+            });
+        };
+
+        /* === 3. HỆ THỐNG CLI (CONSOLE) === */
+        function writeToCLI(text, type = "normal") {
+            const div = document.createElement('div');
+            div.className = "mb-1";
+            if(type === "cmd") div.innerHTML = `<span class="text-white font-bold">${text}</span>`;
+            else if (type === "err") div.innerHTML = `<span class="text-red-500 font-bold bg-red-900/30 px-1">% LỖI: ${text}</span>`;
+            else if (type === "sys") div.innerHTML = `<span class="text-blue-300 italic">*Syslog: ${text}</span>`;
+            else if (type === "warn") div.innerHTML = `<span class="text-yellow-400 font-bold">% CẢNH BÁO: ${text}</span>`;
+            else div.innerHTML = text;
+            
+            DOM.out.appendChild(div);
+            setTimeout(() => { DOM.out.scrollTop = DOM.out.scrollHeight; }, 10);
+        }
+
+        const logCmd = (msg) => writeToCLI(msg, "cmd");
+        const logErr = (msg) => writeToCLI(msg, "err");
+        const logSys = (msg) => writeToCLI(msg, "sys");
+        const logWarn = (msg) => writeToCLI(msg, "warn");
+
+        function clearConsole() { DOM.out.innerHTML = ''; }
+
+        // Bắt sự kiện Gõ lệnh thủ công
+        DOM.input.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                const cmd = this.value.trim();
+                this.value = '';
+                if(cmd) {
+                    logCmd(`${DOM.prompt.innerText} ${cmd}`);
+                    handleManualCommand(cmd);
+                }
+            }
+        });
+
+        function handleManualCommand(cmd) {
+            const args = cmd.split(' ').filter(Boolean);
+            const action = args[0].toLowerCase();
+
+            if (action === 'ping') {
+                if(args[1]) {
+                    const isPcb = DOM.prompt.innerText.includes('PC-B');
+                    runPingEngine(isPcb ? 'pcb' : 'pca', args[1]); 
+                } else logErr("Cú pháp thiếu IP. VD: ping 192.168.1.1");
+            } 
+            else if (action === 'clear') clearConsole();
+            else logErr("Lệnh không xác định. Hỗ trợ: 'ping <IP>' hoặc 'clear'. Để cấu hình hãy dùng nút bấm.");
+        }
+
+        /* === 4. CẤU HÌNH & KIỂM TRA LỖI (BUSINESS LOGIC) === */
+        function applyRouterConfig() {
+            const g0Ip = document.getElementById('cfg-r-g0-ip').value.trim();
+            const g0Mask = document.getElementById('cfg-r-g0-mask').value.trim();
+            const g0On = document.getElementById('cfg-r-g0-state').checked;
+            
+            const g1Ip = document.getElementById('cfg-r-g1-ip').value.trim();
+            const g1Mask = document.getElementById('cfg-r-g1-mask').value.trim();
+            const g1On = document.getElementById('cfg-r-g1-state').checked;
+
+            logCmd("R1# configure terminal");
+
+            // Cấu hình G0/0
+            if(g0Ip && g0Mask) {
+                logCmd("R1(config)# interface GigabitEthernet0/0");
+                const info = getNetInfo(g0Ip, g0Mask);
+                if(!info) logErr("IP/Mask G0/0 sai định dạng.");
+                else if (info.ip === info.net || info.ip === info.bcast) logErr(`IP ${info.ipStr} là địa chỉ Mạng/Broadcast, không thể gán cho cổng!`);
+                else {
+                    state.router.g0.ip = g0Ip;
+                    state.router.g0.mask = info.maskStr;
+                    state.router.g0.netInfo = info;
+                    document.getElementById('cfg-r-g0-mask').value = info.maskStr; // Tự sửa giao diện nếu nhập CIDR
+                    logCmd(`R1(config-if)# ip address ${g0Ip} ${info.maskStr}`);
+                }
+            }
+            if(g0On !== state.router.g0.active) {
+                state.router.g0.active = g0On;
+                logCmd(g0On ? "R1(config-if)# no shutdown" : "R1(config-if)# shutdown");
+                logSys(`Interface GigabitEthernet0/0 changed state to ${g0On?'up':'down'}`);
+            }
+
+            // Cấu hình G0/1
+            if(g1Ip && g1Mask) {
+                logCmd("R1(config)# interface GigabitEthernet0/1");
+                const info = getNetInfo(g1Ip, g1Mask);
+                if(!info) logErr("IP/Mask G0/1 sai định dạng.");
+                else if (info.ip === info.net || info.ip === info.bcast) logErr(`IP ${info.ipStr} không thể dùng!`);
+                else {
+                    state.router.g1.ip = g1Ip;
+                    state.router.g1.mask = info.maskStr;
+                    state.router.g1.netInfo = info;
+                    document.getElementById('cfg-r-g1-mask').value = info.maskStr;
+                    logCmd(`R1(config-if)# ip address ${g1Ip} ${info.maskStr}`);
+                }
+            }
+            if(g1On !== state.router.g1.active) {
+                state.router.g1.active = g1On;
+                logCmd(g1On ? "R1(config-if)# no shutdown" : "R1(config-if)# shutdown");
+                logSys(`Interface GigabitEthernet0/1 changed state to ${g1On?'up':'down'}`);
+            }
+
+            // Bắt lỗi Chồng chéo định tuyến (Overlap)
+            if(state.router.g0.netInfo && state.router.g1.netInfo && state.router.g0.active && state.router.g1.active) {
+                if(isOverlap(state.router.g0.netInfo, state.router.g1.netInfo)) {
+                    logErr(`Dải IP ${state.router.g1.netInfo.netStr} bị chồng chéo (Overlap) với cổng G0/0`);
+                    logWarn("HẬU QUẢ: Router sập định tuyến do 2 cổng cắm chung 1 mạng ảo. Hệ thống tự ép tắt G0/1.");
+                    state.router.g1.active = false;
+                    document.getElementById('cfg-r-g1-state').checked = false;
+                }
+            }
+            logCmd("R1(config)# end");
+            updateUI();
+        }
+
+        function applyPCConfig(pcLable) {
+            const id = pcLable.toLowerCase();
+            const ip = document.getElementById(`cfg-pc${id}-ip`).value.trim();
+            const mask = document.getElementById(`cfg-pc${id}-mask`).value.trim();
+            const gw = document.getElementById(`cfg-pc${id}-gw`).value.trim();
+
+            logCmd(`C:\\> Thiết lập IP cho PC-${pcLable}`);
+
+            const info = getNetInfo(ip, mask);
+            if(!info) { logErr(`Lỗi: Format IP/Mask trên PC-${pcLable} sai.`); return; }
+            if(info.ip === info.net || info.ip === info.bcast) { logErr(`Lỗi: IP ${ip} là ID mạng/Broadcast, PC không nhận!`); return; }
+
+            state[`pc${id}`] = { ip, mask: info.maskStr, gw, longIp: info.ip, netInfo: info };
+            document.getElementById(`cfg-pc${id}-mask`).value = info.maskStr; 
+
+            writeToCLI(`Thành công gán cho PC-${pcLable}: IP ${ip} | Mask ${info.maskStr} | GW ${gw || 'Trống'}`);
+            updateUI();
+        }
+
+        function updateUI() {
+            document.getElementById('label-pca-ip').innerText = state.pca.ip || 'Chưa IP';
+            document.getElementById('label-pcb-ip').innerText = state.pcb.ip || 'Chưa IP';
+            
+            const sG0 = document.getElementById('status-g0');
+            const sG1 = document.getElementById('status-g1');
+            sG0.className = `absolute -left-4 top-1/2 transform -translate-y-1/2 w-3.5 h-3.5 rounded-full border-2 border-white shadow-md transition-colors duration-300 ${state.router.g0.active ? 'bg-green-500' : 'bg-red-500'}`;
+            sG1.className = `absolute -right-4 top-1/2 transform -translate-y-1/2 w-3.5 h-3.5 rounded-full border-2 border-white shadow-md transition-colors duration-300 ${state.router.g1.active ? 'bg-green-500' : 'bg-red-500'}`;
+        }
+
+        function autoSolve() {
+            clearConsole();
+            logSys("Đang nạp cấu hình VLSM hoàn chỉnh để giải quyết bài toán...");
+            
+            document.getElementById('cfg-pca-ip').value = '192.168.1.10';
+            document.getElementById('cfg-pca-mask').value = '/26';
+            document.getElementById('cfg-pca-gw').value = '192.168.1.1';
+            
+            document.getElementById('cfg-r-g0-ip').value = '192.168.1.1';
+            document.getElementById('cfg-r-g0-mask').value = '255.255.255.192';
+            document.getElementById('cfg-r-g0-state').checked = true;
+
+            document.getElementById('cfg-r-g1-ip').value = '192.168.1.65';
+            document.getElementById('cfg-r-g1-mask').value = '255.255.255.224';
+            document.getElementById('cfg-r-g1-state').checked = true;
+
+            document.getElementById('cfg-pcb-ip').value = '192.168.1.70';
+            document.getElementById('cfg-pcb-mask').value = '/27';
+            document.getElementById('cfg-pcb-gw').value = '192.168.1.65';
+
+            // Gọi hàm áp dụng để sinh lệnh
+            applyRouterConfig();
+            applyPCConfig('A');
+            applyPCConfig('B');
+
+            writeToCLI("✅ Cấu hình hoàn tất! Bạn có thể PING để kiểm tra ngay.", "normal");
+        }
+
+        function resetSystem() {
+            document.querySelectorAll('input[type="text"]').forEach(i => i.value = '');
+            document.querySelectorAll('input[type="checkbox"]').forEach(c => c.checked = false);
+
+            state = {
+                pca: { ip: '', mask: '', gw: '', longIp: null },
+                pcb: { ip: '', mask: '', gw: '', longIp: null },
+                router: { g0: { ip: '', mask: '', active: false, netInfo: null }, g1: { ip: '', mask: '', active: false, netInfo: null } }
+            };
+            
+            clearConsole();
+            DOM.layer.innerHTML = '';
+            logWarn("Hệ thống đã reset. Xóa toàn bộ bộ nhớ và tắt các cổng.");
+            updateUI();
+        }
+
+        /* === 5. HOẠT ẢNH & ĐỘNG CƠ PING (PING ENGINE) === */
+        function triggerPingFromUI() {
+            const src = document.getElementById('ping-src').value;
+            const dstOpt = document.getElementById('ping-dst').value;
+            let targetIp = dstOpt;
+            
+            if(dstOpt === 'pca') targetIp = state.pca.ip || '0.0.0.0';
+            if(dstOpt === 'pcb') targetIp = state.pcb.ip || '0.0.0.0';
+            if(dstOpt === 'gw') {
+                const srcObj = state[src];
+                if(!srcObj.gw) { logErr("Bạn chọn Ping Gateway nhưng máy tính chưa cài Default Gateway."); return; }
+                targetIp = srcObj.gw;
+            }
+
+            DOM.prompt.innerText = `PC-${src === 'pca' ? 'A' : 'B'}>`;
+            logCmd(`${DOM.prompt.innerText} ping ${targetIp}`);
+
+            if(targetIp === '0.0.0.0' || targetIp === '') { logErr("LỖI: Máy đích chưa được gán IP!"); return; }
+            runPingEngine(src, targetIp);
+        }
+
+        function createPacket(color = 'bg-yellow-400') {
+            const p = document.createElement('div');
+            p.className = `absolute w-4 h-4 ${color} rounded-full shadow-[0_0_12px_currentColor] transition-all duration-[600ms] ease-in-out z-30`;
+            DOM.layer.appendChild(p);
+            return p;
+        }
+
+        // Hoạt ảnh rơi phong bì báo lỗi
+        function createErrorEnvelope(x, y, reason) {
+            const env = document.createElement('div');
+            env.innerHTML = `<svg class="w-8 h-8 text-red-600 drop-shadow-lg bg-white rounded-sm" fill="currentColor" viewBox="0 0 20 20"><path d="M2.003 5.884L10 9.882l7.997-3.998A2 2 0 0016 4H4a2 2 0 00-1.997 1.884z"></path><path d="M18 8.118l-8 4-8-4V14a2 2 0 002 2h12a2 2 0 002-2V8.118z"></path></svg>
+                             <div class="text-[10px] font-bold text-red-600 bg-white/95 px-1.5 border border-red-200 mt-1 rounded whitespace-nowrap shadow">${reason}</div>`;
+            env.className = `absolute flex flex-col items-center justify-center transform -translate-x-1/2 -translate-y-1/2 animate-drop-error z-40`;
+            env.style.left = `${x}px`;
+            env.style.top = `${y}px`;
+            DOM.layer.appendChild(env);
+            setTimeout(() => { if(env.parentNode) env.remove(); }, 1500);
+        }
+
+        function movePacket(packet, fromNode, toNode) {
+            return new Promise(resolve => {
+                packet.style.left = `${POS[fromNode].x - 8}px`;
+                packet.style.top = `${POS[fromNode].y - 8}px`;
+                void packet.offsetWidth; // Force Reflow để animation bắt đầu
+                packet.style.left = `${POS[toNode].x - 8}px`;
+                packet.style.top = `${POS[toNode].y - 8}px`;
+                setTimeout(resolve, 600);
+            });
+        }
+
+        async function runPingEngine(srcId, targetStr) {
+            const srcObj = state[srcId];
+            const targetLong = ip2long(targetStr);
+
+            // Bẫy 1: Nguồn không có IP
+            if(!srcObj.longIp) {
+                logErr("Request failed. LÝ DO: Máy nguồn chưa được bấm LƯU cấu hình IP!");
+                createErrorEnvelope(POS[srcId].x, POS[srcId].y, "No IP"); return;
+            }
+            if(!targetLong) { logErr(`Ping request could not find host ${targetStr}.`); return; }
+
+            writeToCLI(`Pinging ${targetStr} with 32 bytes of data:`);
+            const p = createPacket('bg-green-400');
+            
+            // Phân tích cùng hay khác mạng
+            const isLocal = (srcObj.longIp & srcObj.netInfo.mask) === (targetLong & srcObj.netInfo.mask);
+            
+            if (isLocal) {
+                // Ping vòng lặp (Chính nó)
+                if (targetLong === srcObj.longIp) {
+                     logSys("Đích là IP của máy gửi (Loopback). Xử lý nội bộ ngay lập tức.");
+                     await movePacket(p, srcId, srcId); 
+                     writeToCLI(`Reply from ${targetStr}: bytes=32 time<1ms TTL=128`);
+                     p.remove(); return;
+                }
+
+                logSys("Đích ở TRONG cùng mạng LAN. Giao thức ARP tìm đích trực tiếp.");
+                let otherPcId = srcId === 'pca' ? 'pcb' : 'pca';
+                let otherPcObj = state[otherPcId];
+                let rIface = srcId === 'pca' ? state.router.g0 : state.router.g1;
+
+                if (otherPcObj.longIp === targetLong) {
+                    await movePacket(p, srcId, otherPcId);
+                    await movePacket(p, otherPcId, srcId);
+                    writeToCLI(`Reply from ${targetStr}: bytes=32 time<1ms TTL=128`);
+                } 
+                else if (rIface.netInfo && rIface.netInfo.ip === targetLong) {
+                    // Bẫy 2: Gateway bị Shutdown
+                    if(!rIface.active) {
+                        await movePacket(p, srcId, 'router');
+                        createErrorEnvelope(POS.router.x, POS.router.y, "Port Shutdown");
+                        logErr("Request timed out. LÝ DO: Cổng Router đích đã bị TẮT (Thiếu No shutdown).");
+                    } else {
+                        await movePacket(p, srcId, 'router');
+                        await movePacket(p, 'router', srcId);
+                        writeToCLI(`Reply from ${targetStr}: bytes=32 time=1ms TTL=255`);
+                    }
+                } else {
+                    await movePacket(p, srcId, srcId); 
+                    createErrorEnvelope(POS[srcId].x + 30, POS[srcId].y, "ARP Drop");
+                    logErr("Destination host unreachable. LÝ DO: IP đích không tồn tại trên Switch nội bộ.");
+                }
+                p.remove(); return;
+            }
+
+            // Giao tiếp khác mạng
+            logSys("Đích ở KHÁC mạng LAN. Chuyển gói tin lên Default Gateway.");
+            
+            // Bẫy 3 & 4: Lỗi Gateway
+            if(!srcObj.gw) {
+                createErrorEnvelope(POS[srcId].x, POS[srcId].y, "No Gateway");
+                logErr("Transmit failed. LÝ DO: Máy cần ra ngoài mạng nhưng thiếu Default Gateway.");
+                p.remove(); return;
+            }
+            if(!isOverlap(srcObj.netInfo, getNetInfo(srcObj.gw, srcObj.mask))) {
+                createErrorEnvelope(POS[srcId].x, POS[srcId].y, "Bad Gateway");
+                logErr(`Transmit failed. LÝ DO: Gateway ${srcObj.gw} bị cấu hình sai, không nằm trong LAN của PC.`);
+                p.remove(); return;
+            }
+
+            // Bay lên Router
+            await movePacket(p, srcId, 'router');
+
+            const r = state.router;
+            let inPort = (srcId === 'pca') ? r.g0 : r.g1;
+            
+            if(!inPort.active || inPort.ip !== srcObj.gw) {
+                createErrorEnvelope(POS.router.x, POS.router.y, "Wrong GW / Down");
+                logErr("Request timed out. LÝ DO: Cổng Router bị tắt hoặc PC trỏ sai IP Gateway.");
+                p.remove(); return;
+            }
+
+            logSys("Router kiểm tra Bảng Định Tuyến (Routing Table)...");
+            
+            let outNode = null, outPort = null;
+            if(r.g0.netInfo && (targetLong & r.g0.netInfo.mask) === r.g0.netInfo.net) { outNode = 'pca'; outPort = r.g0; }
+            else if (r.g1.netInfo && (targetLong & r.g1.netInfo.mask) === r.g1.netInfo.net) { outNode = 'pcb'; outPort = r.g1; }
+
+            if(!outNode) {
+                createErrorEnvelope(POS.router.x, POS.router.y, "No Route");
+                logErr(`Reply from ${inPort.ip}: Destination net unreachable. LÝ DO: Router mù đường.`);
+                p.remove(); return;
+            }
+            if(!outPort.active) {
+                createErrorEnvelope(POS.router.x, POS.router.y, "Port Down");
+                logErr("Request timed out. LÝ DO: Router tìm được đường nhưng cổng ngõ ra bị Shutdown.");
+                p.remove(); return;
+            }
+
+            // Bay xuống Đích
+            await movePacket(p, 'router', outNode);
+
+            const dstObj = state[outNode];
+            if(dstObj.longIp !== targetLong) {
+                createErrorEnvelope(POS[outNode].x, POS[outNode].y, "Drop");
+                logErr("Request timed out. LÝ DO: Đến mạng đích nhưng không PC nào có IP này.");
+                p.remove(); return;
+            }
+
+            logSys(`Gói tin tới đích. PC-${outNode.toUpperCase()} kiểm tra đường Reply về...`);
+            
+            // Bẫy 5: Đích không có đường về
+            if(!dstObj.gw || dstObj.gw !== outPort.ip) {
+                createErrorEnvelope(POS[outNode].x, POS[outNode].y, "No Return Route");
+                logErr(`Request timed out. LÝ DO: Máy đích nhận được nhưng không có Gateway hợp lệ để trả lời!`);
+                p.remove(); return;
+            }
+
+            // Reply thành công
+            await movePacket(p, outNode, 'router');
+            await movePacket(p, 'router', srcId);
+
+            writeToCLI(`Reply from ${targetStr}: bytes=32 time=2ms TTL=127`);
+            p.remove();
+        }
+    </script>
+</body>
+</html>

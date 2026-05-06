@@ -1,0 +1,687 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>THE BÁO: Cấu hình và xác minh định tuyến động OSPFv2 (Single area)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        /* Cuộn mượt mà cho toàn trang */
+        html { scroll-behavior: smooth; }
+
+        /* Vùng chứa sơ đồ hỗ trợ cuộn đa chiều */
+        .topology-wrapper {
+            width: 100%;
+            height: 50vh; /* Khoảng 1 nửa màn hình trên mobile */
+            min-height: 350px;
+            overflow: auto; /* Cuộn ngang & dọc */
+            -webkit-overflow-scrolling: touch;
+            background-color: #0f172a;
+            border-radius: 0.5rem;
+            position: relative;
+            box-shadow: inset 0 0 20px rgba(0,0,0,0.5);
+            /* Touch action cho phép vuốt trong khung mà không cuộn trang web */
+            touch-action: pan-x pan-y;
+        }
+
+        /* Canvas kích thước cố định để không bị méo sơ đồ */
+        .topology-canvas {
+            width: 900px;
+            height: 500px;
+            position: relative;
+            background-image: 
+                linear-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+            background-size: 20px 20px;
+            margin: 0 auto; /* Căn giữa nếu màn hình to hơn */
+        }
+
+        /* Tùy chỉnh thanh cuộn cho sơ đồ */
+        .topology-wrapper::-webkit-scrollbar { width: 8px; height: 8px; }
+        .topology-wrapper::-webkit-scrollbar-track { background: #1e293b; border-radius: 4px;}
+        .topology-wrapper::-webkit-scrollbar-thumb { background: #475569; border-radius: 4px; }
+        .topology-wrapper::-webkit-scrollbar-thumb:hover { background: #64748b; }
+
+        /* Router Node */
+        .router-node {
+            position: absolute;
+            width: 70px;
+            height: 70px;
+            background: linear-gradient(145deg, #1d4ed8, #2563eb);
+            border-radius: 50%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
+            z-index: 20;
+            cursor: pointer;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5), inset 0 -3px 5px rgba(0,0,0,0.2);
+            transition: all 0.2s ease;
+            transform: translate(-50%, -50%);
+            border: 2px solid #60a5fa;
+        }
+
+        .router-node:hover {
+            transform: translate(-50%, -50%) scale(1.1);
+            box-shadow: 0 0 20px rgba(59, 130, 246, 0.8);
+        }
+        
+        .router-node.selected {
+            border: 4px solid #fbbf24;
+            box-shadow: 0 0 25px rgba(251, 191, 36, 0.8);
+            background: linear-gradient(145deg, #b45309, #d97706);
+        }
+
+        /* Đường Link và SVG */
+        #link-svg { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 10; pointer-events: none; }
+        .link-line { stroke-width: 5; transition: stroke 0.5s ease, stroke-dasharray 0.5s ease; stroke-linecap: round; }
+        .link-text { fill: #f8fafc; font-size: 13px; font-family: monospace; font-weight: bold; }
+        .link-bg { fill: #1e293b; rx: 4; ry: 4; }
+
+        /* Hoạt ảnh Gói tin Hello (Phong bì thư) */
+        .hello-packet {
+            position: absolute;
+            z-index: 30;
+            color: #fbbf24;
+            font-size: 18px;
+            pointer-events: none;
+            transition: top 1.5s linear, left 1.5s linear, opacity 0.2s;
+            transform: translate(-50%, -50%);
+            filter: drop-shadow(0 0 5px rgba(251, 191, 36, 0.8));
+        }
+
+        /* Console CLI */
+        .cli-terminal {
+            background-color: #000;
+            color: #0f0;
+            font-family: 'Consolas', 'Courier New', monospace;
+            border-radius: 0.25rem;
+            box-shadow: inset 0 0 10px #000;
+        }
+        .cli-output {
+            height: 200px;
+            overflow-y: auto;
+            padding: 10px;
+        }
+        .cli-input-line {
+            display: flex;
+            align-items: center;
+            padding: 5px 10px 10px 10px;
+            background-color: #050505;
+            border-top: 1px solid #333;
+        }
+        .cli-input {
+            background: transparent;
+            border: none;
+            color: #0f0;
+            outline: none;
+            width: 100%;
+            font-family: 'Consolas', 'Courier New', monospace;
+            margin-left: 5px;
+        }
+
+        /* Colors cho Log */
+        .log-sys { color: #888; }
+        .log-cmd { color: #fff; font-weight: bold; }
+        .log-err { color: #ff3333; }
+        .log-warn { color: #ffcc00; }
+        .log-succ { color: #00ffcc; }
+
+        /* Animation lỗi */
+        @keyframes errorPulse {
+            0% { filter: drop-shadow(0 0 0px red); }
+            50% { filter: drop-shadow(0 0 15px red); }
+            100% { filter: drop-shadow(0 0 0px red); }
+        }
+        .error-glow { animation: errorPulse 1s infinite; }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col bg-gray-100 text-gray-800 font-sans">
+
+    <!-- Sticky Header -->
+    <header class="sticky top-0 z-50 bg-blue-900 text-white shadow-lg border-b-4 border-yellow-500">
+        <div class="container mx-auto p-4 flex flex-col md:flex-row justify-between items-center gap-2">
+            <h1 class="text-lg md:text-xl font-bold tracking-wide uppercase text-center md:text-left">
+                <i class="fas fa-network-wired text-yellow-400 mr-2"></i> 
+                THE BÁO: Cấu hình OSPFv2 (Single area)
+            </h1>
+            <div class="flex gap-3">
+                <span class="bg-blue-800 border border-blue-600 px-3 py-1 rounded text-sm font-semibold shadow-inner">CCNA 3.4</span>
+                <button onclick="resetSimulation()" class="bg-red-600 hover:bg-red-500 text-white px-3 py-1 rounded text-sm font-bold shadow-md transition transform hover:scale-105">
+                    <i class="fas fa-sync-alt mr-1"></i> Reset Toàn Bộ
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content Area -->
+    <main class="flex-grow container mx-auto p-2 md:p-4 my-2">
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-4">
+            
+            <!-- Phần Trên/Trái: Sơ đồ mô phỏng -->
+            <div class="lg:col-span-7 flex flex-col gap-4">
+                <div class="bg-white rounded-lg shadow-md border border-gray-300 overflow-hidden">
+                    <div class="bg-gray-200 px-4 py-2 border-b border-gray-300 flex justify-between items-center">
+                        <h2 class="font-bold text-gray-800"><i class="fas fa-map mr-2 text-blue-600"></i> Sơ đồ mạng Logic</h2>
+                        <span class="text-xs text-gray-500 bg-white px-2 py-1 rounded shadow-sm"><i class="fas fa-hand-pointer mr-1"></i> Chạm để cuộn 4 chiều</span>
+                    </div>
+                    
+                    <!-- Topology Area -->
+                    <div class="topology-wrapper" id="topo-scroll-area">
+                        <div class="topology-canvas" id="canvas">
+                            <svg id="link-svg"></svg>
+                            <!-- Router DOM nodes rendered via JS -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Chú giải -->
+                <div class="bg-white p-3 rounded-lg shadow-md border border-gray-300 flex flex-wrap gap-4 text-sm justify-center items-center">
+                    <span class="flex items-center"><span class="w-3 h-3 rounded-full bg-gray-500 mr-2"></span> DOWN (Chưa chạy)</span>
+                    <span class="flex items-center"><span class="w-3 h-3 rounded-full bg-yellow-500 mr-2"></span> INIT (Gửi Hello)</span>
+                    <span class="flex items-center"><span class="w-3 h-3 rounded-full bg-green-500 mr-2"></span> FULL (Thành công)</span>
+                    <span class="flex items-center"><span class="w-3 h-3 rounded-full bg-red-500 mr-2 error-glow"></span> LỖI (Cấu hình sai)</span>
+                </div>
+            </div>
+
+            <!-- Phần Dưới/Phải: Bảng điều khiển & Console -->
+            <div class="lg:col-span-5 flex flex-col gap-4">
+                
+                <!-- Bảng Cấu Hình GUI -->
+                <div class="bg-white rounded-lg shadow-md border border-gray-300">
+                    <div class="bg-blue-800 text-white px-4 py-3 rounded-t-lg flex justify-between items-center">
+                        <h2 class="font-bold"><i class="fas fa-sliders-h mr-2"></i> Bảng điều khiển (GUI)</h2>
+                        <span id="gui-router-badge" class="bg-yellow-400 text-blue-900 font-bold px-2 py-0.5 rounded text-xs hidden"></span>
+                    </div>
+                    
+                    <div class="p-4" id="gui-panel-content">
+                        <!-- Trạng thái chờ -->
+                        <div id="gui-waiting" class="text-center text-gray-500 py-6">
+                            <i class="fas fa-mouse-pointer text-3xl mb-2 text-blue-300"></i>
+                            <p>Hãy click chọn một Router (R1, R2, R3) trên bản đồ để cấu hình.</p>
+                        </div>
+
+                        <!-- Trạng thái đã chọn -->
+                        <div id="gui-active" class="hidden space-y-4">
+                            <div class="flex gap-2">
+                                <select id="gui-network" class="flex-grow border border-gray-400 rounded p-2 text-sm focus:ring-2 focus:ring-blue-500">
+                                    <option value="" disabled selected>-- Chọn mạng kết nối trực tiếp --</option>
+                                    <option value="10.1.12.0">10.1.12.0 (Link R1-R2)</option>
+                                    <option value="10.1.23.0">10.1.23.0 (Link R2-R3)</option>
+                                    <option value="10.1.13.0">10.1.13.0 (Link R1-R3)</option>
+                                </select>
+                                <input type="number" id="gui-area" value="0" class="w-20 border border-gray-400 rounded p-2 text-sm text-center" placeholder="Area">
+                            </div>
+                            
+                            <div class="flex flex-col gap-2">
+                                <button onclick="guiAddNetwork()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 rounded shadow flex items-center justify-center transition">
+                                    <i class="fas fa-play mr-2"></i> Bật OSPF cho mạng này
+                                </button>
+                                
+                                <div class="border-t border-gray-200 my-2"></div>
+                                <p class="text-xs text-gray-500 mb-1"><i class="fas fa-exclamation-triangle text-yellow-500"></i> Kịch bản học tập (Tạo lỗi):</p>
+                                <button onclick="guiInjectError()" class="w-full bg-red-100 hover:bg-red-200 text-red-700 border border-red-400 font-bold py-2 rounded flex items-center justify-center transition">
+                                    <i class="fas fa-bug mr-2"></i> Cố tình cấu hình sai Area ID = 1
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Giao diện Console CLI -->
+                <div class="bg-gray-900 rounded-lg shadow-xl flex flex-col flex-grow border border-gray-700">
+                    <div class="bg-gray-800 px-3 py-1 border-b border-gray-700 flex justify-between items-center rounded-t-lg">
+                        <span class="text-xs text-gray-400"><i class="fas fa-terminal"></i> Terminal CLI - <span id="cli-router-name">Chưa kết nối</span></span>
+                        <div class="flex gap-1">
+                            <span class="w-3 h-3 rounded-full bg-red-500"></span>
+                            <span class="w-3 h-3 rounded-full bg-yellow-500"></span>
+                            <span class="w-3 h-3 rounded-full bg-green-500"></span>
+                        </div>
+                    </div>
+                    
+                    <div class="cli-terminal flex-grow flex flex-col relative">
+                        <div id="cli-output" class="cli-output text-sm">
+                            <div class="log-sys">Hệ thống The Báo Simulator OS đã khởi động.</div>
+                            <div class="log-sys">Nhập lệnh hoặc dùng các nút ở trên để bắt đầu.</div>
+                            <div class="log-sys">Lệnh hỗ trợ: network [ip] 0.0.0.255 area [num], show ip route</div>
+                        </div>
+                        <div class="cli-input-line">
+                            <span id="cli-prompt" class="text-green-400 font-bold">Router></span>
+                            <input type="text" id="cli-input" class="cli-input" placeholder="Gõ lệnh CLI tại đây..." onkeypress="handleCLI(event)">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Bảng Định Tuyến -->
+                <div class="bg-white rounded-lg shadow-md border border-gray-300">
+                    <div class="bg-green-700 text-white px-4 py-2 rounded-t-lg font-bold text-sm">
+                        <i class="fas fa-table mr-2"></i> Bảng định tuyến (Routing Table)
+                    </div>
+                    <div id="routing-table" class="p-3 bg-gray-50 h-32 overflow-y-auto text-xs font-mono text-gray-700 border-b border-gray-200">
+                        <div class="text-gray-400 italic text-center mt-4">Vui lòng chọn Router để xem bảng định tuyến.</div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </main>
+
+    <!-- Footer chứng minh thiết kế -->
+    <footer class="bg-black text-gray-400 py-6 mt-auto border-t-4 border-blue-800">
+        <div class="container mx-auto text-center">
+            <h3 class="text-xl font-bold text-white tracking-widest mb-2">THE BÁO</h3>
+            <p class="text-sm">Trình mô phỏng trực quan tương tác - Thiết kế bởi THE BÁO &copy; 2026</p>
+            <p class="text-xs mt-2 text-gray-600">Cuộn chạm đáy - Layout Responsive chuẩn HTML5/Tailwind</p>
+        </div>
+    </footer>
+
+    <!-- JAVASCRIPT LOGIC -->
+    <script>
+        // --- DATA STATE ---
+        const routers = {
+            'R1': { x: 250, y: 150, id: '1.1.1.1', conf: [] },
+            'R2': { x: 650, y: 150, id: '2.2.2.2', conf: [] },
+            'R3': { x: 450, y: 400, id: '3.3.3.3', conf: [] }
+        };
+
+        const links = [
+            { id: 'L12', n1: 'R1', n2: 'R2', ip: '10.1.12.0', state: 'DOWN', error: false },
+            { id: 'L23', n2: 'R2', n1: 'R3', ip: '10.1.23.0', state: 'DOWN', error: false },
+            { id: 'L13', n1: 'R1', n2: 'R3', ip: '10.1.13.0', state: 'DOWN', error: false }
+        ];
+
+        let selectedRouter = null;
+
+        // --- KHỞI TẠO DOM ---
+        function initTopology() {
+            const svg = document.getElementById('link-svg');
+            const canvas = document.getElementById('canvas');
+            
+            // Xóa cũ (dùng cho reset)
+            svg.innerHTML = '';
+            document.querySelectorAll('.router-node').forEach(n => n.remove());
+
+            links.forEach(l => {
+                const r1 = routers[l.n1];
+                const r2 = routers[l.n2];
+                const cx = (r1.x + r2.x) / 2;
+                const cy = (r1.y + r2.y) / 2;
+
+                // Line
+                const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                line.setAttribute('id', `line-${l.id}`);
+                line.setAttribute('x1', r1.x); line.setAttribute('y1', r1.y);
+                line.setAttribute('x2', r2.x); line.setAttribute('y2', r2.y);
+                line.setAttribute('stroke', '#475569'); // Gray
+                line.setAttribute('class', 'link-line');
+                svg.appendChild(line);
+
+                // BG Text
+                const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+                rect.setAttribute('x', cx - 50); rect.setAttribute('y', cy - 25);
+                rect.setAttribute('width', '100'); rect.setAttribute('height', '20');
+                rect.setAttribute('class', 'link-bg');
+                svg.appendChild(rect);
+
+                // Text IP
+                const txtIp = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                txtIp.setAttribute('x', cx); txtIp.setAttribute('y', cy - 11);
+                txtIp.setAttribute('text-anchor', 'middle');
+                txtIp.setAttribute('class', 'link-text');
+                txtIp.textContent = l.ip + '/24';
+                svg.appendChild(txtIp);
+
+                // Text State
+                const txtState = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                txtState.setAttribute('id', `state-${l.id}`);
+                txtState.setAttribute('x', cx); txtState.setAttribute('y', cy + 15);
+                txtState.setAttribute('text-anchor', 'middle');
+                txtState.setAttribute('class', 'link-text');
+                txtState.setAttribute('fill', '#94a3b8');
+                txtState.textContent = 'DOWN';
+                svg.appendChild(txtState);
+                
+                // Group báo lỗi (ẩn mặc định)
+                const errGrp = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+                errGrp.setAttribute('id', `err-${l.id}`);
+                errGrp.style.display = 'none';
+                
+                const errIcon = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                errIcon.setAttribute('x', cx); errIcon.setAttribute('y', cy + 35);
+                errIcon.setAttribute('text-anchor', 'middle');
+                errIcon.setAttribute('class', 'error-glow');
+                errIcon.setAttribute('fill', '#ef4444');
+                errIcon.setAttribute('font-family', '"Font Awesome 5 Free"');
+                errIcon.setAttribute('font-weight', '900');
+                errIcon.setAttribute('font-size', '20px');
+                errIcon.textContent = '\uf071'; // fa-exclamation-triangle
+                errGrp.appendChild(errIcon);
+                svg.appendChild(errGrp);
+            });
+
+            // Nodes
+            for (const [name, data] of Object.entries(routers)) {
+                const node = document.createElement('div');
+                node.id = `node-${name}`;
+                node.className = 'router-node';
+                node.style.left = `${data.x}px`;
+                node.style.top = `${data.y}px`;
+                node.innerHTML = `<i class="fas fa-hdd text-xl mb-1"></i><span>${name}</span>`;
+                node.onclick = () => selectRouter(name);
+                canvas.appendChild(node);
+            }
+
+            // Center scroll
+            const wrap = document.getElementById('topo-scroll-area');
+            wrap.scrollLeft = (wrap.scrollWidth - wrap.clientWidth) / 2;
+        }
+
+        // --- TƯƠNG TÁC GIAO DIỆN ---
+        function selectRouter(name) {
+            document.querySelectorAll('.router-node').forEach(n => n.classList.remove('selected'));
+            document.getElementById(`node-${name}`).classList.add('selected');
+            
+            selectedRouter = name;
+            
+            // GUI Update
+            document.getElementById('gui-waiting').classList.add('hidden');
+            document.getElementById('gui-active').classList.remove('hidden');
+            document.getElementById('gui-router-badge').textContent = name;
+            document.getElementById('gui-router-badge').classList.remove('hidden');
+            document.getElementById('gui-network').selectedIndex = 0;
+
+            // CLI Update
+            document.getElementById('cli-router-name').textContent = name;
+            document.getElementById('cli-prompt').textContent = `${name}(config-router)#`;
+            
+            updateRoutingTable();
+        }
+
+        // --- XỬ LÝ LỆNH GUI -> CLI ---
+        function guiAddNetwork() {
+            if(!selectedRouter) return;
+            const ip = document.getElementById('gui-network').value;
+            const area = document.getElementById('gui-area').value;
+            
+            if(!ip) {
+                alert("Vui lòng chọn IP mạng!"); return;
+            }
+
+            const cmd = `network ${ip} 0.0.0.255 area ${area}`;
+            
+            // In lệnh ra CLI
+            printLog(`> ${cmd}`, 'cmd');
+            
+            // Gọi hàm thực thi
+            executeOSPF(selectedRouter, ip, area);
+        }
+
+        function guiInjectError() {
+            if(!selectedRouter) return;
+            const sel = document.getElementById('gui-network');
+            let ip = sel.value;
+            if(!ip) {
+                // Tự lấy mạng L12 nếu chưa chọn
+                ip = '10.1.12.0';
+            }
+            
+            const cmd = `network ${ip} 0.0.0.255 area 1`; // Cố tình Area 1
+            printLog(`> ${cmd}`, 'cmd');
+            executeOSPF(selectedRouter, ip, '1');
+            
+            printLog(`[!] BẠN ĐÃ CỐ TÌNH CẤU HÌNH SAI AREA (NÊN LÀ AREA 0)`, 'warn');
+        }
+
+        // --- XỬ LÝ CLI THỦ CÔNG ---
+        function handleCLI(e) {
+            if(e.key === 'Enter') {
+                const input = document.getElementById('cli-input');
+                const cmd = input.value.trim().toLowerCase();
+                input.value = '';
+                
+                if(!selectedRouter) {
+                    printLog("Lỗi: Vui lòng click chọn 1 Router trên bản đồ trước!", 'err');
+                    return;
+                }
+
+                printLog(`> ${cmd}`, 'cmd');
+
+                // Regex bắt lệnh network
+                const netMatch = cmd.match(/^network\s+(\d+\.\d+\.\d+\.\d+)\s+0\.0\.0\.255\s+area\s+(\d+)$/);
+                
+                if (netMatch) {
+                    executeOSPF(selectedRouter, netMatch[1], netMatch[2]);
+                } else if (cmd === 'show ip route') {
+                    showIPRouteCLI();
+                } else if (cmd === '?' || cmd === 'help') {
+                    printLog("Các lệnh hỗ trợ:", 'sys');
+                    printLog(" - network [ip] 0.0.0.255 area [id]", 'sys');
+                    printLog(" - show ip route", 'sys');
+                } else {
+                    printLog("% Invalid input detected at '^' marker.", 'err');
+                }
+            }
+        }
+
+        // --- LOGIC MẠNG & ANIMATION ---
+        function executeOSPF(router, ip, area) {
+            // Kiểm tra IP có hợp lệ (nối trực tiếp ko)
+            const isConnected = links.some(l => (l.n1 === router || l.n2 === router) && l.ip === ip);
+            if(!isConnected) {
+                printLog(`% Lỗi: Mạng ${ip} không kết nối trực tiếp với ${router}`, 'err');
+                return;
+            }
+
+            // Lưu cấu hình
+            const exist = routers[router].conf.find(c => c.ip === ip);
+            if(!exist) {
+                routers[router].conf.push({ip: ip, area: area});
+                printLog(`* OSPF Process khởi tạo cho ${ip} area ${area}`, 'sys');
+            } else {
+                exist.area = area; // Cập nhật đè
+                printLog(`* Đã cập nhật Area thành ${area} cho mạng ${ip}`, 'sys');
+            }
+
+            // Kích hoạt thuật toán kiểm tra toàn mạng
+            checkAdjacency(ip);
+        }
+
+        function checkAdjacency(ip) {
+            const link = links.find(l => l.ip === ip);
+            if(!link) return;
+
+            const c1 = routers[link.n1].conf.find(c => c.ip === ip);
+            const c2 = routers[link.n2].conf.find(c => c.ip === ip);
+
+            // Xóa lỗi cũ
+            link.error = false;
+            document.getElementById(`err-${link.id}`).style.display = 'none';
+
+            if(c1 && !c2) {
+                // R1 bật, R2 chưa
+                animateHello(link.n1, link.n2);
+                updateLinkState(link, 'INIT', '#eab308'); // Yellow
+                printLog(`* ${link.n1} gửi Hello đến ${link.n2} (Đang đợi...)`, 'sys');
+            } 
+            else if (!c1 && c2) {
+                animateHello(link.n2, link.n1);
+                updateLinkState(link, 'INIT', '#eab308');
+                printLog(`* ${link.n2} gửi Hello đến ${link.n1} (Đang đợi...)`, 'sys');
+            }
+            else if (c1 && c2) {
+                // Cả 2 đều bật, check thông số
+                animateHello(link.n1, link.n2);
+                setTimeout(() => animateHello(link.n2, link.n1), 500);
+
+                if(c1.area === c2.area) {
+                    // Thành công
+                    setTimeout(() => {
+                        updateLinkState(link, 'FULL', '#22c55e'); // Green
+                        printLog(`%OSPF-5-ADJCHG: Process 1, Nbr trên ${ip} từ LOADING sang FULL, Adjacency thiết lập`, 'succ');
+                        updateRoutingTable();
+                    }, 1500);
+                } else {
+                    // LỖI SAI AREA
+                    setTimeout(() => {
+                        updateLinkState(link, 'INIT', '#ef4444', true); // Red Dash + Lỗi
+                        link.error = true;
+                        document.getElementById(`err-${link.id}`).style.display = 'block';
+                        
+                        printLog(`%OSPF-4-ERR: Mismatch Area ID trên ${ip}`, 'err');
+                        printLog(`[HẬU QUẢ] Hàng xóm từ chối kết nối. Không thể trao đổi bảng định tuyến.`, 'warn');
+                        
+                        // Rung màn hình terminal nhẹ để gây chú ý
+                        const term = document.querySelector('.cli-terminal');
+                        term.classList.add('error-glow');
+                        setTimeout(()=> term.classList.remove('error-glow'), 1000);
+                    }, 1500);
+                }
+            }
+        }
+
+        function updateLinkState(link, stateTxt, color, isDashed = false) {
+            link.state = stateTxt;
+            const line = document.getElementById(`line-${link.id}`);
+            const txt = document.getElementById(`state-${link.id}`);
+            
+            line.setAttribute('stroke', color);
+            txt.setAttribute('fill', color);
+            txt.textContent = stateTxt;
+
+            if(isDashed) {
+                line.setAttribute('stroke-dasharray', '10,10');
+            } else {
+                line.removeAttribute('stroke-dasharray');
+            }
+        }
+
+        // Hoạt ảnh phong bì thư (Hello packet)
+        function animateHello(fromN, toN) {
+            const r1 = routers[fromN];
+            const r2 = routers[toN];
+            const canvas = document.getElementById('canvas');
+
+            const env = document.createElement('i');
+            env.className = 'fas fa-envelope hello-packet';
+            env.style.left = `${r1.x}px`;
+            env.style.top = `${r1.y}px`;
+            canvas.appendChild(env);
+
+            // Kích hoạt transition
+            setTimeout(() => {
+                env.style.left = `${r2.x}px`;
+                env.style.top = `${r2.y}px`;
+            }, 50);
+
+            // Xóa rác DOM
+            setTimeout(() => {
+                env.style.opacity = '0';
+                setTimeout(() => env.remove(), 200);
+            }, 1500);
+        }
+
+        // BẢNG ĐỊNH TUYẾN
+        function updateRoutingTable() {
+            if(!selectedRouter) return;
+            const tbody = document.getElementById('routing-table');
+            
+            // 1. Lấy mạng Connected (Chỉ hiện các mạng đã cấu hình cho giống thực tế CLI focus)
+            let routes = [];
+            routers[selectedRouter].conf.forEach(c => {
+                routes.push({ type: 'C', net: c.ip, via: 'directly connected' });
+            });
+
+            // 2. Lấy OSPF (Dựa trên Link FULL)
+            // Nếu có link FULL, nó học được mạng của thằng bên kia
+            links.forEach(l => {
+                if(l.state === 'FULL') {
+                    // Nếu link này nối với tôi, tôi học đc mạng connected của thằng kia
+                    let neighbor = null;
+                    if(l.n1 === selectedRouter) neighbor = l.n2;
+                    if(l.n2 === selectedRouter) neighbor = l.n1;
+
+                    if(neighbor) {
+                        routers[neighbor].conf.forEach(nc => {
+                            // Không nạp mạng trực tiếp của mình vào mục OSPF
+                            if(!routes.find(r => r.net === nc.ip)) {
+                                routes.push({ type: 'O', net: nc.ip, via: routers[neighbor].id });
+                            }
+                        });
+                        
+                        // Logic cho mạng vòng 3 node (học cách 2 hop)
+                        links.forEach(l2 => {
+                            if(l2.state === 'FULL' && (l2.n1 === neighbor || l2.n2 === neighbor)) {
+                                let farNode = l2.n1 === neighbor ? l2.n2 : l2.n1;
+                                if(farNode !== selectedRouter) {
+                                    routers[farNode].conf.forEach(fc => {
+                                        if(!routes.find(r => r.net === fc.ip)) {
+                                            routes.push({ type: 'O', net: fc.ip, via: routers[neighbor].id });
+                                        }
+                                    });
+                                }
+                            }
+                        });
+                    }
+                }
+            });
+
+            // Render
+            if(routes.length === 0) {
+                tbody.innerHTML = '<div class="text-gray-500 italic mt-2">Bảng định tuyến trống (Gateway of last resort is not set)</div>';
+                return;
+            }
+
+            let html = '<div class="font-bold mb-2 text-gray-800 border-b pb-1">Gateway of last resort is not set</div>';
+            routes.forEach(r => {
+                if(r.type === 'C') {
+                    html += `<div><span class="font-bold text-green-600 mr-2">C</span> ${r.net}/24 is directly connected</div>`;
+                } else {
+                    html += `<div><span class="font-bold text-blue-600 mr-2">O</span> ${r.net}/24 [110/2] via ${r.via}</div>`;
+                }
+            });
+            tbody.innerHTML = html;
+        }
+
+        function showIPRouteCLI() {
+            const table = document.getElementById('routing-table').innerText;
+            printLog(table, 'succ');
+        }
+
+        // --- TIỆN ÍCH CHUNG ---
+        function printLog(msg, typeClass) {
+            const out = document.getElementById('cli-output');
+            const div = document.createElement('div');
+            div.className = `log-${typeClass}`;
+            div.textContent = msg;
+            out.appendChild(div);
+            out.scrollTop = out.scrollHeight; // Auto scroll to bottom
+        }
+
+        function resetSimulation() {
+            // Reset Data
+            for(let r in routers) routers[r].conf = [];
+            links.forEach(l => { l.state = 'DOWN'; l.error = false; });
+            
+            // Reset UI
+            initTopology();
+            document.getElementById('gui-waiting').classList.remove('hidden');
+            document.getElementById('gui-active').classList.add('hidden');
+            document.getElementById('gui-router-badge').classList.add('hidden');
+            selectedRouter = null;
+            
+            document.getElementById('cli-router-name').textContent = 'Chưa kết nối';
+            document.getElementById('cli-prompt').textContent = `Router>`;
+            document.getElementById('cli-output').innerHTML = '<div class="log-sys">Hệ thống đã được khôi phục về trạng thái gốc.</div>';
+            
+            document.getElementById('routing-table').innerHTML = '<div class="text-gray-400 italic text-center mt-4">Vui lòng chọn Router để xem bảng định tuyến.</div>';
+        }
+
+        // Khởi chạy khi load
+        window.onload = initTopology;
+
+    </script>
+</body>
+</html>

@@ -1,0 +1,615 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>THE BÁO: 1.1 Vai trò và chức năng của các thiết bị mạng</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- React & ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <!-- Babel for JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <style>
+        body { 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            margin: 0; padding: 0; 
+            background-color: #f8fafc;
+            scroll-behavior: smooth;
+        }
+        .animate-fadeIn { animation: fadeIn 0.3s ease-in-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+        
+        .custom-scrollbar::-webkit-scrollbar { width: 8px; height: 8px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #cbd5e1; border-radius: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #64748b; border-radius: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #475569; }
+
+        .console-scrollbar::-webkit-scrollbar { width: 6px; }
+        .console-scrollbar::-webkit-scrollbar-track { background: #1e293b; }
+        .console-scrollbar::-webkit-scrollbar-thumb { background: #475569; border-radius: 3px; }
+
+        @keyframes dropError {
+            0% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+            50% { transform: translate(-50%, -80%) scale(1.2); opacity: 1; }
+            100% { transform: translate(-50%, 50%) scale(0.5); opacity: 0; }
+        }
+        .animate-dropError { animation: dropError 1s forwards; }
+    </style>
+</head>
+<body class="text-slate-800">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        // --- CÁC COMPONENT ICON (Thay thế Lucide CDN để tránh lỗi React #130) ---
+        const IconTerminal = ({ size = 24, className = "" }) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line></svg>;
+        const IconPlay = ({ size = 24, className = "" }) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>;
+        const IconRotateCcw = ({ size = 24, className = "" }) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><polyline points="3 3 3 8 8 8"></polyline></svg>;
+        const IconShieldAlert = ({ size = 24, className = "" }) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>;
+        const IconPower = ({ size = 24, className = "" }) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M18.36 6.64a9 9 0 1 1-12.73 0"></path><line x1="12" y1="2" x2="12" y2="12"></line></svg>;
+        const IconMonitor = ({ size = 24, className = "" }) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>;
+        const IconMail = ({ size = 24, className = "" }) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>;
+        const IconAlertTriangle = ({ size = 24, className = "" }) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>;
+        const IconChevronRight = ({ size = 24, className = "" }) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><polyline points="9 18 15 12 9 6"></polyline></svg>;
+        const IconInfo = ({ size = 24, className = "" }) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>;
+        const IconWifi = ({ size = 24, className = "" }) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M5 12.55a11 11 0 0 1 14.08 0"></path><path d="M1.42 9a16 16 0 0 1 21.16 0"></path><path d="M8.53 16.11a6 6 0 0 1 6.95 0"></path><line x1="12" y1="20" x2="12.01" y2="20"></line></svg>;
+
+        // --- SVGs THIẾT BỊ MẠNG ---
+        const TopoRouter = () => (
+            <svg viewBox="0 0 100 100" className="w-full h-full drop-shadow-md">
+                <circle cx="50" cy="50" r="45" fill="#0284c7" />
+                <circle cx="50" cy="50" r="35" fill="none" stroke="#7dd3fc" strokeWidth="2" strokeDasharray="6,4" />
+                <g fill="#ffffff">
+                    <path d="M50 15 L58 28 L42 28 Z" /><rect x="47" y="28" width="6" height="15" />
+                    <path d="M50 85 L58 72 L42 72 Z" /><rect x="47" y="57" width="6" height="15" />
+                    <path d="M15 50 L28 42 L28 58 Z" /><rect x="28" y="47" width="15" height="6" />
+                    <path d="M85 50 L72 42 L72 58 Z" /><rect x="57" y="47" width="15" height="6" />
+                </g>
+            </svg>
+        );
+        const TopoFirewall = ({ isBlocked }) => (
+            <svg viewBox="0 0 100 100" className="w-full h-full drop-shadow-md transition-colors duration-300">
+                <rect x="10" y="15" width="80" height="70" rx="4" fill={isBlocked ? "#991b1b" : "#dc2626"} />
+                <g stroke={isBlocked ? "#f87171" : "#fca5a5"} strokeWidth="3">
+                    <line x1="10" y1="38" x2="90" y2="38" />
+                    <line x1="10" y1="62" x2="90" y2="62" />
+                    <line x1="36" y1="15" x2="36" y2="38" />
+                    <line x1="64" y1="15" x2="64" y2="38" />
+                    <line x1="23" y1="38" x2="23" y2="62" />
+                    <line x1="50" y1="38" x2="50" y2="62" />
+                    <line x1="77" y1="38" x2="77" y2="62" />
+                    <line x1="36" y1="62" x2="36" y2="85" />
+                    <line x1="64" y1="62" x2="64" y2="85" />
+                </g>
+                {isBlocked && <circle cx="50" cy="50" r="15" fill="rgba(0,0,0,0.5)" />}
+                {isBlocked && <path d="M40 40 L60 60 M60 40 L40 60" stroke="#fff" strokeWidth="4" strokeLinecap="round" />}
+            </svg>
+        );
+        const TopoL3Switch = () => (
+            <svg viewBox="0 0 100 100" className="w-full h-full drop-shadow-md">
+                <rect x="10" y="20" width="80" height="60" rx="6" fill="#0284c7" />
+                <circle cx="50" cy="50" r="18" fill="#ffffff" />
+                <g fill="#0284c7">
+                    <path d="M50 36 L55 41 L45 41 Z" />
+                    <path d="M50 64 L55 59 L45 59 Z" />
+                    <path d="M36 50 L41 45 L41 55 Z" />
+                    <path d="M64 50 L59 45 L59 55 Z" />
+                </g>
+            </svg>
+        );
+        const TopoL2Switch = () => (
+            <svg viewBox="0 0 100 100" className="w-full h-full drop-shadow-md">
+                <rect x="10" y="25" width="80" height="50" rx="6" fill="#0284c7" />
+                <g fill="#ffffff">
+                    <path d="M 75 35 L 85 40 L 75 45 Z" /><rect x="15" y="38" width="60" height="4" />
+                    <path d="M 25 55 L 15 60 L 25 65 Z" /><rect x="25" y="58" width="60" height="4" />
+                </g>
+            </svg>
+        );
+        const TopoWLC = () => (
+            <svg viewBox="0 0 100 100" className="w-full h-full drop-shadow-md">
+                <rect x="10" y="20" width="80" height="60" rx="4" fill="#475569" />
+                <rect x="15" y="30" width="70" height="15" rx="2" fill="#94a3b8" />
+                <rect x="15" y="55" width="70" height="15" rx="2" fill="#94a3b8" />
+                <circle cx="75" cy="37.5" r="3" fill="#22c55e" />
+                <circle cx="75" cy="62.5" r="3" fill="#22c55e" />
+            </svg>
+        );
+        const TopoAP = () => (
+            <svg viewBox="0 0 100 100" className="w-full h-full drop-shadow-md">
+                <path d="M 20 65 Q 50 20 80 65 Z" fill="#f1f5f9" />
+                <rect x="15" y="65" width="70" height="10" rx="5" fill="#cbd5e1" />
+                <circle cx="50" cy="70" r="3" fill="#22c55e" />
+                <g fill="none" stroke="#3b82f6" strokeWidth="3" strokeLinecap="round">
+                    <path d="M 35 30 Q 50 15 65 30" />
+                    <path d="M 42 40 Q 50 30 58 40" />
+                </g>
+            </svg>
+        );
+        const TopoPC = () => (
+            <svg viewBox="0 0 100 100" className="w-full h-full drop-shadow-md">
+                <rect x="15" y="20" width="70" height="50" rx="4" fill="#334155" />
+                <rect x="20" y="25" width="60" height="35" rx="2" fill="#bae6fd" />
+                <path d="M 45 70 L 40 85 L 60 85 L 55 70 Z" fill="#64748b" />
+                <rect x="30" y="85" width="40" height="6" rx="3" fill="#475569" />
+            </svg>
+        );
+        const TopoPhone = ({ isWifiOff }) => (
+            <svg viewBox="0 0 100 100" className="w-full h-full drop-shadow-md transition-colors duration-300">
+                <rect x="30" y="10" width="40" height="80" rx="6" fill="#1e293b" />
+                {/* Màn hình đổi màu khi mất mạng */}
+                <rect x="34" y="20" width="32" height="60" rx="3" fill={isWifiOff ? "#94a3b8" : "#bae6fd"} />
+                <circle cx="50" cy="85" r="3" fill="#475569" />
+                <line x1="45" y1="15" x2="55" y2="15" stroke="#475569" strokeWidth="2" strokeLinecap="round" />
+                
+                {/* Icon Wifi trên màn hình điện thoại */}
+                {!isWifiOff ? (
+                    <g fill="none" stroke="#0284c7" strokeWidth="2" strokeLinecap="round">
+                        <path d="M42 35 Q50 28 58 35" />
+                        <path d="M46 40 Q50 36 54 40" />
+                        <circle cx="50" cy="45" r="1.5" fill="#0284c7" stroke="none" />
+                    </g>
+                ) : (
+                    <g fill="none" stroke="#dc2626" strokeWidth="3" strokeLinecap="round">
+                        <line x1="40" y1="40" x2="60" y2="60" />
+                        <line x1="60" y1="40" x2="40" y2="60" />
+                    </g>
+                )}
+            </svg>
+        );
+        const TopoInternet = () => (
+            <svg viewBox="0 0 100 100" className="w-full h-full drop-shadow-md">
+                <path d="M 25 60 A 15 15 0 0 1 45 45 A 25 25 0 0 1 85 55 A 15 15 0 0 1 75 80 L 25 80 A 15 15 0 0 1 25 60 Z" fill="#0ea5e9" />
+                <text x="52" y="65" fill="#ffffff" fontSize="14" fontWeight="bold" textAnchor="middle" fontFamily="sans-serif">INTERNET</text>
+            </svg>
+        );
+
+        // --- CƠ SỞ DỮ LIỆU THIẾT BỊ ---
+        const initialDevices = {
+            internet: { id: 'internet', name: 'Internet', type: 'WAN', x: 400, y: 60, icon: TopoInternet, desc: 'Mạng toàn cầu (WAN). Nơi chứa các dịch vụ Web, DNS nằm ngoài vùng kiểm soát doanh nghiệp.' },
+            firewall: { id: 'firewall', name: 'Firewall', type: 'Security', x: 400, y: 180, icon: TopoFirewall, isBlocked: false, desc: 'Bức tường lửa ở cửa ngõ. Lọc toàn bộ dữ liệu ra/vào mạng nội bộ dựa trên các bộ luật (ACL).' },
+            router: { id: 'router', name: 'Router R1', type: 'Layer 3', x: 400, y: 300, icon: TopoRouter, desc: 'Tìm đường đi (Routing) tốt nhất giữa các mạng khác nhau. Hoạt động như cổng ra Default Gateway.' },
+            l3switch: { id: 'l3switch', name: 'L3 Switch (Core)', type: 'Layer 3/2', x: 400, y: 420, icon: TopoL3Switch, desc: 'Định tuyến IP nội bộ (Inter-VLAN) tốc độ cao nhờ phần cứng chuyên dụng, giảm tải cho Router.' },
+            wlc: { id: 'wlc', name: 'WLC', type: 'Controller', x: 600, y: 420, icon: TopoWLC, desc: 'Bộ não quản lý hàng chục Access Point tập trung. Đẩy cấu hình và hỗ trợ roaming mạng Wi-Fi.' },
+            l2switch: { id: 'l2switch', name: 'L2 Switch (Access)', type: 'Layer 2', x: 200, y: 540, icon: TopoL2Switch, portDown: false, desc: 'Chuyển tiếp dữ liệu trực tiếp đến đúng máy đích dựa trên địa chỉ MAC vật lý.' },
+            ap: { id: 'ap', name: 'Access Point', type: 'Wireless', x: 600, y: 540, icon: TopoAP, desc: 'Phát sóng Wi-Fi. Đóng vai trò cầu nối chuyển tín hiệu vô tuyến thành dữ liệu trên cáp đồng.' },
+            pc1: { id: 'pc1', name: 'PC1 (10.0.0.2)', type: 'End Device', x: 100, y: 660, icon: TopoPC, desc: 'Máy tính nhân viên (VLAN Kế toán) sử dụng kết nối Ethernet có dây.' },
+            pc2: { id: 'pc2', name: 'PC2 (10.0.0.3)', type: 'End Device', x: 300, y: 660, icon: TopoPC, desc: 'Máy tính nhân viên cùng VLAN với PC1. Giao tiếp qua Switch L2 mà không cần định tuyến.' },
+            phone: { id: 'phone', name: 'Phone (Wi-Fi)', type: 'End Device', x: 600, y: 660, icon: TopoPhone, isWifiOff: false, desc: 'Điện thoại của Khách. Kết nối không dây qua AP và được cấp dải mạng Guest tách biệt.' },
+        };
+
+        const links = [
+            { source: 'internet', target: 'firewall' },
+            { source: 'firewall', target: 'router' },
+            { source: 'router', target: 'l3switch' },
+            { source: 'l3switch', target: 'l2switch' },
+            { source: 'l3switch', target: 'wlc' },
+            { source: 'l3switch', target: 'ap' },
+            { source: 'wlc', target: 'ap', dashed: true, color: '#a855f7' }, 
+            { source: 'l2switch', target: 'pc1' },
+            { source: 'l2switch', target: 'pc2' },
+            { source: 'ap', target: 'phone', dashed: true },
+        ];
+
+        function App() {
+            const [devices, setDevices] = React.useState(initialDevices);
+            const [consoleLogs, setConsoleLogs] = React.useState([{ text: 'Hệ thống đã khởi động. Nhấn vào thiết bị để xem thông tin.', type: 'info' }]);
+            const [cliInput, setCliInput] = React.useState('');
+            
+            const [packet, setPacket] = React.useState(null); 
+            const [isPlaying, setIsPlaying] = React.useState(false);
+            const [selectedDeviceId, setSelectedDeviceId] = React.useState('router'); // Mặc định chọn Router
+
+            const logsEndRef = React.useRef(null);
+
+            React.useEffect(() => {
+                logsEndRef.current?.scrollIntoView({ behavior: "smooth" });
+            }, [consoleLogs]);
+
+            const addLog = (text, type = 'info') => {
+                setConsoleLogs(prev => [...prev, { text, type }]);
+            };
+
+            const resetSystem = () => {
+                setDevices(initialDevices);
+                setPacket(null);
+                setIsPlaying(false);
+                setSelectedDeviceId('router');
+                setConsoleLogs([
+                    { text: 'R1# reload', type: 'cmd' },
+                    { text: 'System configuration has been modified. Save? [yes/no]: no', type: 'info' },
+                    { text: 'Proceed with reload? [confirm]', type: 'info' },
+                    { text: '* Hệ thống đã được khôi phục về trạng thái ban đầu *', type: 'success' }
+                ]);
+            };
+
+            const animatePacket = async (path, onNodeReach) => {
+                setIsPlaying(true);
+                for (let i = 0; i < path.length; i++) {
+                    const dev = devices[path[i]];
+                    setPacket({ x: dev.x, y: dev.y, status: 'moving' });
+                    
+                    const result = onNodeReach(path[i], i, path.length);
+                    if (result === 'DROP') {
+                        setPacket(prev => ({ ...prev, status: 'error' })); 
+                        await new Promise(r => setTimeout(r, 1200));
+                        setPacket(null);
+                        setIsPlaying(false);
+                        return false; 
+                    }
+                    
+                    await new Promise(r => setTimeout(r, 800)); 
+                }
+                setPacket(null);
+                setIsPlaying(false);
+                return true;
+            };
+
+            const cmdPingPC2 = async () => {
+                if(isPlaying) return;
+                addLog('PC1> ping 10.0.0.3', 'cmd');
+                addLog('Đang phân tích bảng MAC. Đích cùng Subnet (VLAN).', 'sys');
+                
+                const path = ['pc1', 'l2switch', 'pc2'];
+                await animatePacket(path, (nodeId) => {
+                    if (nodeId === 'l2switch') {
+                        if (devices.l2switch.portDown) {
+                            addLog('%LINK-3-UPDOWN: Interface FastEthernet0/1, changed state to down', 'error');
+                            addLog('L2 Switch: Cổng kết nối bị Shutdown. Hủy gói tin.', 'error');
+                            return 'DROP';
+                        }
+                        addLog('L2 Switch: Đọc địa chỉ MAC. Chuyển tiếp trực tiếp qua Port 2.', 'sys');
+                    }
+                    if (nodeId === 'pc2') addLog('Reply from 10.0.0.3: bytes=32 time<1ms TTL=128', 'success');
+                    return 'CONTINUE';
+                });
+            };
+
+            const cmdPingInternet = async () => {
+                if(isPlaying) return;
+                addLog('PC1> ping 8.8.8.8', 'cmd');
+                addLog('Đích khác Subnet. Gửi gói tin lên Default Gateway (R1).', 'sys');
+                
+                const path = ['pc1', 'l2switch', 'l3switch', 'router', 'firewall', 'internet'];
+                await animatePacket(path, (nodeId) => {
+                    if (nodeId === 'l2switch' && devices.l2switch.portDown) {
+                        addLog('L2 Switch: Port Shutdown. Gói tin bị huỷ.', 'error'); return 'DROP';
+                    }
+                    if (nodeId === 'router') addLog('Router: Tra bảng định tuyến, đẩy ra cổng WAN.', 'sys');
+                    if (nodeId === 'firewall') {
+                        if (devices.firewall.isBlocked) {
+                            addLog('%ASA-4-106023: Deny tcp src inside:10.0.0.2 dst outside:8.8.8.8', 'error');
+                            addLog('Firewall: Bị chặn bởi Access Control List (ACL). Hủy gói tin.', 'error');
+                            return 'DROP';
+                        }
+                        addLog('Firewall: Gói tin hợp lệ. Cho phép đi ra Internet.', 'sys');
+                    }
+                    if (nodeId === 'internet') addLog('Reply from 8.8.8.8: bytes=32 time=12ms TTL=54', 'success');
+                    return 'CONTINUE';
+                });
+            };
+
+            const cmdPingPhone = async () => {
+                if(isPlaying) return;
+                addLog('Phone> ping 8.8.8.8', 'cmd');
+                
+                if (devices.phone.isWifiOff) {
+                    addLog('Phone: Wi-Fi đang tắt. Không có kết nối mạng.', 'error');
+                    return;
+                }
+
+                addLog('Đang chuyển đổi dữ liệu thành sóng vô tuyến gửi đến AP...', 'sys');
+                const path = ['phone', 'ap', 'l3switch', 'router', 'firewall', 'internet'];
+                
+                await animatePacket(path, (nodeId) => {
+                    if (nodeId === 'ap') addLog('Access Point: Chuyển sóng Wi-Fi thành tín hiệu cáp đồng.', 'sys');
+                    if (nodeId === 'router') addLog('Router: Định tuyến dải IP của Khách ra Internet.', 'sys');
+                    if (nodeId === 'firewall') {
+                        if (devices.firewall.isBlocked) {
+                            addLog('%ASA-4-106023: Deny tcp src inside:Guest dst outside:8.8.8.8', 'error');
+                            addLog('Firewall: Chặn mạng Khách (Guest) truy cập do chính sách ACL.', 'error');
+                            return 'DROP';
+                        }
+                        addLog('Firewall: Luồng dữ liệu an toàn. Bỏ qua.', 'sys');
+                    }
+                    if (nodeId === 'internet') addLog('Reply from 8.8.8.8: bytes=32 time=45ms TTL=54 (Wi-Fi Latency)', 'success');
+                    return 'CONTINUE';
+                });
+            };
+
+            const toggleFirewall = () => {
+                const newState = !devices.firewall.isBlocked;
+                addLog('R1(config)# access-list 100 ' + (newState ? 'deny' : 'permit') + ' ip any any', 'cmd');
+                addLog('R1(config)# interface outside', 'cmd');
+                addLog('R1(config-if)# ip access-group 100 out', 'cmd');
+                setDevices(prev => ({ ...prev, firewall: { ...prev.firewall, isBlocked: newState } }));
+                addLog(`Firewall ${newState ? 'đã bật luật CHẶN' : 'đã gỡ luật chặn'} truy cập Internet.`, newState ? 'error' : 'success');
+            };
+
+            const toggleSwitchPort = () => {
+                const newState = !devices.l2switch.portDown;
+                addLog('S1(config)# interface FastEthernet0/1', 'cmd');
+                addLog('S1(config-if)# ' + (newState ? 'shutdown' : 'no shutdown'), 'cmd');
+                setDevices(prev => ({ ...prev, l2switch: { ...prev.l2switch, portDown: newState } }));
+                addLog(`L2 Switch: Cổng mạng đã bị ${newState ? 'TẮT (Administratively down)' : 'BẬT (Up)'}.`, newState ? 'error' : 'success');
+            };
+
+            const togglePhoneWifi = () => {
+                const newState = !devices.phone.isWifiOff;
+                addLog('Phone> ' + (newState ? 'wifi disable' : 'wifi enable'), 'cmd');
+                setDevices(prev => ({ ...prev, phone: { ...prev.phone, isWifiOff: newState } }));
+                addLog(`Điện thoại: ${newState ? 'Đã ngắt kết nối Wi-Fi' : 'Đã kết nối lại Wi-Fi Khách'}.`, newState ? 'error' : 'success');
+            };
+
+            const handleCliSubmit = (e) => {
+                e.preventDefault();
+                if (!cliInput.trim() || isPlaying) return;
+                const cmd = cliInput.trim().toLowerCase();
+                setCliInput('');
+                
+                if (cmd === 'ping 8.8.8.8') cmdPingInternet();
+                else if (cmd === 'ping 10.0.0.3') cmdPingPC2();
+                else if (cmd === 'ping phone') cmdPingPhone();
+                else if (cmd === 'shutdown') toggleSwitchPort();
+                else if (cmd === 'no shutdown') toggleSwitchPort();
+                else if (cmd === 'wifi off') { if(!devices.phone.isWifiOff) togglePhoneWifi(); }
+                else if (cmd === 'wifi on') { if(devices.phone.isWifiOff) togglePhoneWifi(); }
+                else if (cmd === 'reset') resetSystem();
+                else {
+                    addLog(`PC> ${cliInput}`, 'cmd');
+                    addLog('% Invalid input detected at \'^\' marker.', 'error');
+                }
+            };
+
+            // Lấy ra thiết bị đang được chọn
+            const selectedDevice = devices[selectedDeviceId];
+
+            return (
+                <div className="flex flex-col min-h-screen">
+                    {/* STICKY HEADER */}
+                    <header className="sticky top-0 z-50 bg-indigo-900 text-white shadow-md p-4">
+                        <div className="max-w-7xl mx-auto flex items-center justify-between">
+                            <h1 className="text-lg md:text-xl font-bold tracking-wide flex items-center gap-2">
+                                <IconMonitor className="text-indigo-300" />
+                                THE BÁO: 1.1 Chức năng các thiết bị mạng
+                            </h1>
+                        </div>
+                    </header>
+
+                    {/* MAIN CONTENT */}
+                    <main className="flex-1 w-full max-w-7xl mx-auto flex flex-col">
+                        
+                        {/* TOPOLOGY DIAGRAM */}
+                        <div className="w-full h-[50vh] lg:h-[550px] overflow-auto border-b-2 border-slate-300 bg-[#f8fafc] custom-scrollbar shadow-inner relative">
+                            <div className="absolute top-2 left-2 text-xs font-bold text-slate-400 bg-white/80 px-2 py-1 rounded border border-slate-200 z-10 hidden lg:block">
+                                Sơ đồ Mạng Doanh Nghiệp (Topology)
+                            </div>
+                            <div className="absolute top-2 left-2 text-xs font-bold text-indigo-600 bg-indigo-50 px-2 py-1 rounded border border-indigo-200 z-10 lg:hidden animate-pulse">
+                                👈 Vuốt ngang để xem sơ đồ 👉
+                            </div>
+
+                            {/* Canvas Network */}
+                            <div className="relative min-w-[800px] min-h-[750px] md:min-h-[600px] w-full h-full transform origin-top lg:origin-center scale-[0.8] md:scale-100">
+                                {/* Lines */}
+                                <svg className="absolute top-0 left-0 w-full h-full pointer-events-none">
+                                    {links.map((link, idx) => {
+                                        const src = devices[link.source];
+                                        const tgt = devices[link.target];
+                                        const isPortDown = (link.source === 'l2switch' || link.target === 'l2switch') && devices.l2switch.portDown;
+                                        const isWifiOff = (link.source === 'phone' || link.target === 'phone') && devices.phone.isWifiOff;
+                                        
+                                        // Nếu wifi điện thoại tắt, làm mờ luôn tia nối đứt nét
+                                        if(isWifiOff && link.dashed) return null;
+
+                                        return (
+                                            <line
+                                                key={idx}
+                                                x1={src.x} y1={src.y}
+                                                x2={tgt.x} y2={tgt.y}
+                                                stroke={isPortDown && !link.dashed ? "#ef4444" : (link.color || "#94a3b8")}
+                                                strokeWidth="4"
+                                                strokeDasharray={link.dashed ? "8,8" : "none"}
+                                                className="transition-colors duration-300"
+                                            />
+                                        );
+                                    })}
+                                </svg>
+
+                                {/* Devices */}
+                                {Object.values(devices).map((device) => {
+                                    const IconComponent = device.icon;
+                                    const isBlocked = device.id === 'firewall' ? device.isBlocked : false;
+                                    const isDown = device.id === 'l2switch' ? device.portDown : false;
+                                    const isWifiOff = device.id === 'phone' ? device.isWifiOff : false;
+                                    const isSelected = selectedDeviceId === device.id;
+
+                                    return (
+                                        <div
+                                            key={device.id}
+                                            onClick={() => setSelectedDeviceId(device.id)}
+                                            className="absolute transform -translate-x-1/2 -translate-y-1/2 flex flex-col items-center z-10 group cursor-pointer"
+                                            style={{ left: device.x, top: device.y }}
+                                        >
+                                            <div className={`w-16 h-16 p-1 bg-white rounded-xl transition-all duration-300 relative
+                                                ${isDown ? 'ring-4 ring-red-500 opacity-80' : ''}
+                                                ${isSelected ? 'ring-4 ring-indigo-400 scale-110 shadow-xl' : 'drop-shadow-lg group-hover:scale-110'}
+                                            `}>
+                                                <IconComponent isBlocked={isBlocked} isWifiOff={isWifiOff} />
+                                                
+                                                {/* Status Badges */}
+                                                {isDown && <div className="absolute -top-2 -right-2 bg-red-600 text-white rounded-full p-0.5"><IconPower size={14}/></div>}
+                                                {isBlocked && device.id === 'firewall' && <div className="absolute -top-2 -right-2 bg-red-600 text-white rounded-full p-0.5"><IconShieldAlert size={14}/></div>}
+                                            </div>
+                                            <div className="mt-2 flex flex-col items-center">
+                                                <span className={`text-sm font-bold bg-white/90 px-2 py-0.5 rounded shadow-sm whitespace-nowrap border
+                                                    ${isSelected ? 'text-indigo-700 border-indigo-300' : 'text-slate-800 border-slate-200'}
+                                                `}>
+                                                    {device.name}
+                                                </span>
+                                                <span className="text-[10px] font-semibold text-indigo-600 uppercase mt-0.5">
+                                                    {device.type}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+
+                                {/* Packet Animation */}
+                                {packet && (
+                                    <div 
+                                        className={`absolute transform -translate-x-1/2 -translate-y-1/2 z-50 transition-all ease-linear
+                                            ${packet.status === 'error' ? 'animate-dropError' : 'duration-700'}
+                                        `}
+                                        style={{ left: packet.x, top: packet.y }}
+                                    >
+                                        {packet.status === 'moving' ? (
+                                            <div className="w-6 h-6 bg-yellow-400 rounded-full border-2 border-white shadow-[0_0_15px_rgba(250,204,21,1)] flex items-center justify-center">
+                                                <div className="w-2 h-2 bg-yellow-800 rounded-full animate-ping"></div>
+                                            </div>
+                                        ) : (
+                                            <div className="bg-red-600 text-white p-1.5 rounded shadow-xl flex items-center justify-center">
+                                                <IconMail size={20} />
+                                                <span className="absolute -bottom-1 -right-1 text-white bg-black rounded-full"><IconAlertTriangle size={12}/></span>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* CONTROL PANEL & CLI */}
+                        <div className="flex flex-col lg:flex-row w-full bg-white flex-1 min-h-[300px]">
+                            
+                            {/* Bảng thao tác nhanh và Thông tin thiết bị */}
+                            <div className="w-full lg:w-1/3 p-4 lg:p-6 border-b lg:border-b-0 lg:border-r border-slate-200 bg-slate-50 flex flex-col">
+                                
+                                {/* CARD: Thông tin thiết bị tương tác */}
+                                <div className="mb-6 bg-indigo-50 border border-indigo-100 rounded-xl p-4 shadow-sm relative overflow-hidden">
+                                    <div className="absolute top-0 left-0 w-1 h-full bg-indigo-500"></div>
+                                    <h3 className="text-sm font-bold text-indigo-900 flex items-center gap-2 mb-1">
+                                        <IconInfo size={16} className="text-indigo-600" /> Thông tin: {selectedDevice.name}
+                                    </h3>
+                                    <div className="text-xs font-semibold text-indigo-700 mb-2 inline-block bg-indigo-100 px-2 py-0.5 rounded">
+                                        Vai trò: {selectedDevice.type}
+                                    </div>
+                                    <p className="text-sm text-slate-700 leading-relaxed">
+                                        {selectedDevice.desc}
+                                    </p>
+                                </div>
+
+                                <h2 className="text-sm font-bold text-slate-500 uppercase tracking-wider mb-4 flex items-center gap-2">
+                                    <IconPlay size={16} /> Bảng Điều Khiển Nhanh
+                                </h2>
+                                
+                                <div className="space-y-3 overflow-y-auto custom-scrollbar flex-1 pr-1">
+                                    {/* Nhóm LAN */}
+                                    <button onClick={cmdPingPC2} disabled={isPlaying} className="w-full text-left p-3 bg-white border border-slate-300 rounded-lg shadow-sm hover:border-indigo-500 transition-all flex flex-col disabled:opacity-50">
+                                        <span className="font-bold text-slate-800 text-sm">1. Gửi Ping nội bộ (L2 Switch)</span>
+                                        <span className="text-xs text-slate-500 mt-0.5">PC1 gửi gói tin sang PC2 (Chung VLAN).</span>
+                                    </button>
+
+                                    {/* Nhóm WAN */}
+                                    <button onClick={cmdPingInternet} disabled={isPlaying} className="w-full text-left p-3 bg-white border border-slate-300 rounded-lg shadow-sm hover:border-indigo-500 transition-all flex flex-col disabled:opacity-50">
+                                        <span className="font-bold text-slate-800 text-sm">2. Ra Internet (Router/NAT)</span>
+                                        <span className="text-xs text-slate-500 mt-0.5">PC1 truy cập web ngoài 8.8.8.8.</span>
+                                    </button>
+
+                                    {/* Nhóm Wi-Fi Phone */}
+                                    <button onClick={cmdPingPhone} disabled={isPlaying} className="w-full text-left p-3 bg-white border border-slate-300 rounded-lg shadow-sm hover:border-indigo-500 transition-all flex flex-col disabled:opacity-50">
+                                        <span className="font-bold text-slate-800 text-sm flex items-center gap-1.5"><IconWifi size={14}/> 3. Điện thoại vào Web</span>
+                                        <span className="text-xs text-slate-500 mt-0.5">Điện thoại gửi Ping ra Internet bằng Wi-Fi.</span>
+                                    </button>
+
+                                    <div className="h-px bg-slate-200 my-2"></div>
+
+                                    {/* Nhóm Tương tác lỗi */}
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <button onClick={toggleFirewall} disabled={isPlaying} className={`w-full text-left p-2 border rounded-lg shadow-sm transition-all flex flex-col disabled:opacity-50
+                                            ${devices.firewall.isBlocked ? 'bg-red-50 border-red-300' : 'bg-white border-slate-300 hover:border-red-400'}
+                                        `}>
+                                            <span className={`font-bold flex items-center gap-1.5 text-xs ${devices.firewall.isBlocked ? 'text-red-700' : 'text-slate-800'}`}>
+                                                <IconShieldAlert size={14}/> {devices.firewall.isBlocked ? 'Gỡ luật chặn' : 'Chặn Firewall'}
+                                            </span>
+                                        </button>
+
+                                        <button onClick={toggleSwitchPort} disabled={isPlaying} className={`w-full text-left p-2 border rounded-lg shadow-sm transition-all flex flex-col disabled:opacity-50
+                                            ${devices.l2switch.portDown ? 'bg-red-50 border-red-300' : 'bg-white border-slate-300 hover:border-red-400'}
+                                        `}>
+                                            <span className={`font-bold flex items-center gap-1.5 text-xs ${devices.l2switch.portDown ? 'text-red-700' : 'text-slate-800'}`}>
+                                                <IconPower size={14}/> {devices.l2switch.portDown ? 'Bật cổng L2' : 'Tắt cổng L2'}
+                                            </span>
+                                        </button>
+
+                                        <button onClick={togglePhoneWifi} disabled={isPlaying} className={`col-span-2 w-full text-center p-2 border rounded-lg shadow-sm transition-all flex justify-center items-center gap-2 disabled:opacity-50
+                                            ${devices.phone.isWifiOff ? 'bg-orange-50 border-orange-300' : 'bg-white border-slate-300 hover:border-orange-400'}
+                                        `}>
+                                            <span className={`font-bold flex items-center gap-1.5 text-xs ${devices.phone.isWifiOff ? 'text-orange-700' : 'text-slate-800'}`}>
+                                                {devices.phone.isWifiOff ? 'Đang ngắt Wi-Fi (Bấm để bật lại)' : 'Ngắt kết nối Wi-Fi trên Điện thoại'}
+                                            </span>
+                                        </button>
+                                    </div>
+                                    
+                                    <button onClick={resetSystem} disabled={isPlaying} className="w-full mt-2 p-3 bg-slate-800 text-white rounded-lg shadow font-bold flex justify-center items-center gap-2 hover:bg-slate-700 active:bg-slate-900 transition-colors">
+                                        <IconRotateCcw size={16} /> Reset Cấu Hình
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* CLI Console */}
+                            <div className="w-full lg:w-2/3 p-4 lg:p-6 flex flex-col bg-[#1e1e1e]">
+                                <h2 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-2">
+                                    <IconTerminal size={16} /> Console / CLI
+                                </h2>
+                                
+                                {/* Khung in Log */}
+                                <div className="flex-1 min-h-[250px] max-h-[400px] overflow-y-auto console-scrollbar bg-black border border-slate-700 p-4 rounded-t-lg font-mono text-sm leading-relaxed">
+                                    {consoleLogs.map((log, idx) => (
+                                        <div key={idx} className={`mb-1 animate-fadeIn break-words
+                                            ${log.type === 'cmd' ? 'text-green-400 font-bold' : ''}
+                                            ${log.type === 'info' ? 'text-gray-300' : ''}
+                                            ${log.type === 'sys' ? 'text-cyan-300' : ''}
+                                            ${log.type === 'error' ? 'text-red-400 font-bold' : ''}
+                                            ${log.type === 'success' ? 'text-yellow-300' : ''}
+                                        `}>
+                                            {log.type !== 'cmd' && log.type !== 'info' && <span className="opacity-50 mr-2">*</span>}
+                                            {log.text}
+                                        </div>
+                                    ))}
+                                    <div ref={logsEndRef} />
+                                </div>
+
+                                {/* Khung nhập lệnh thủ công */}
+                                <form onSubmit={handleCliSubmit} className="flex bg-black border border-t-0 border-slate-700 rounded-b-lg overflow-hidden p-2">
+                                    <span className="text-green-400 font-mono font-bold px-2 py-1 select-none">Terminal&gt;</span>
+                                    <input 
+                                        type="text" 
+                                        value={cliInput}
+                                        onChange={(e) => setCliInput(e.target.value)}
+                                        disabled={isPlaying}
+                                        placeholder="Thử lệnh: 'ping 8.8.8.8', 'wifi off'..."
+                                        className="flex-1 bg-transparent text-white font-mono outline-none disabled:opacity-50 ml-1"
+                                        autoComplete="off" spellCheck="false"
+                                    />
+                                    <button type="submit" disabled={isPlaying || !cliInput.trim()} className="text-slate-400 hover:text-white px-3 transition-colors disabled:opacity-50">
+                                        <IconChevronRight size={20} />
+                                    </button>
+                                </form>
+                            </div>
+                        </div>
+                    </main>
+
+                    {/* BLACK FOOTER */}
+                    <footer className="bg-black text-white text-center py-8 mt-auto shrink-0 border-t-4 border-indigo-500">
+                        <div className="text-lg font-bold tracking-[0.2em] mb-2 uppercase">Thiết kế bởi THE BÁO</div>
+                        <p className="text-sm text-slate-400">Dự án Mô phỏng Mạng Tương tác - Single File HTML Deployment</p>
+                    </footer>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>

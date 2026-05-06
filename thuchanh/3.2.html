@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>THE BÁO: Phần 3.2 - Quyết định chuyển tiếp của Router</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        /* Tùy chỉnh thanh cuộn cho sơ đồ */
+        .topology-scroll::-webkit-scrollbar { width: 8px; height: 8px; }
+        .topology-scroll::-webkit-scrollbar-track { background: #f1f5f9; border-radius: 4px; }
+        .topology-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        .topology-scroll::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+        /* Vùng canvas sơ đồ mạng cố định kích thước */
+        #topology-canvas {
+            position: relative;
+            width: 800px;
+            height: 450px;
+            background-color: #f8fafc;
+            background-image: radial-gradient(#cbd5e1 1px, transparent 1px);
+            background-size: 20px 20px;
+            margin: 0 auto;
+        }
+
+        .node { position: absolute; transform: translate(-50%, -50%); z-index: 10; text-align: center; }
+        .node-icon { display: flex; align-items: center; justify-content: center; border-radius: 50%; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); }
+        .node-label { margin-top: 8px; font-size: 12px; font-weight: 600; background: rgba(255,255,255,0.8); padding: 2px 6px; border-radius: 4px; }
+
+        /* Animation Gói tin (Phong bì) */
+        .packet {
+            position: absolute;
+            width: 28px; height: 20px;
+            background-color: #3b82f6;
+            border-radius: 4px;
+            z-index: 20;
+            display: flex; align-items: center; justify-content: center;
+            color: white; font-size: 12px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+            transition: top 1s ease-in-out, left 1s ease-in-out, background-color 0.3s;
+            transform: translate(-50%, -50%);
+        }
+        .packet::after { content: "\f0e0"; font-family: "Font Awesome 6 Free"; font-weight: 900; }
+        
+        .packet.drop-anim {
+            background-color: #ef4444 !important;
+            transform: translate(-50%, -50%) scale(0) rotate(180deg);
+            opacity: 0;
+            transition: all 0.5s ease-in;
+        }
+
+        /* Animation Router suy nghĩ */
+        .thinking { animation: pulseBorder 1s infinite; }
+        @keyframes pulseBorder {
+            0% { box-shadow: 0 0 0 0 rgba(250, 204, 21, 0.7); }
+            70% { box-shadow: 0 0 0 15px rgba(250, 204, 21, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(250, 204, 21, 0); }
+        }
+
+        /* Highlight dòng trong bảng định tuyến */
+        .row-highlight { background-color: #fef08a !important; transition: background-color 0.3s; }
+        
+        /* Terminal Scrollbar */
+        #cli-output::-webkit-scrollbar { width: 6px; }
+        #cli-output::-webkit-scrollbar-track { background: #111827; }
+        #cli-output::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 3px; }
+    </style>
+</head>
+<body class="min-h-screen bg-gray-100 flex flex-col font-sans text-gray-800">
+
+    <!-- Header Sticky -->
+    <header class="sticky top-0 z-50 bg-blue-800 text-white shadow-lg border-b-4 border-blue-600">
+        <div class="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
+            <div>
+                <h1 class="text-xl md:text-2xl font-bold tracking-wide">
+                    THE BÁO: <span class="font-light text-blue-200">Phần 3.2 - Quyết định của Router (IP Routing)</span>
+                </h1>
+                <p class="text-xs md:text-sm text-blue-300 mt-1">Mô phỏng Longest Prefix Match & Default Route</p>
+            </div>
+            <i class="fas fa-network-wired text-3xl opacity-80 hidden md:block"></i>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="flex-grow max-w-6xl w-full mx-auto p-2 md:p-4 flex flex-col gap-4">
+        
+        <!-- Khu vực Topology (Sơ đồ mạng) -->
+        <div class="bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden flex flex-col">
+            <div class="bg-gray-50 border-b border-gray-200 p-2 px-4 flex justify-between items-center">
+                <span class="font-bold text-gray-700"><i class="fas fa-sitemap mr-2"></i>Sơ đồ mạng (Topology)</span>
+                <span class="text-xs text-gray-500 bg-gray-200 px-2 py-1 rounded">Có thể vuốt/cuộn để xem</span>
+            </div>
+            
+            <!-- Vùng cuộn sơ đồ (đáp ứng Mobile 50vh) -->
+            <div class="topology-scroll overflow-auto h-[50vh] md:h-auto" id="topology-wrapper">
+                <div id="topology-canvas">
+                    <!-- SVG Lines (Cố định tọa độ) -->
+                    <svg class="absolute top-0 left-0 w-full h-full pointer-events-none" style="z-index: 5;">
+                        <!-- Từ PC đến Router -->
+                        <line x1="150" y1="350" x2="400" y2="225" stroke="#94a3b8" stroke-width="3" />
+                        <!-- Từ Router đến LAN 1 -->
+                        <line x1="400" y1="225" x2="200" y2="80" stroke="#94a3b8" stroke-width="3" />
+                        <!-- Từ Router đến LAN 2 -->
+                        <line x1="400" y1="225" x2="600" y2="80" stroke="#94a3b8" stroke-width="3" />
+                        <!-- Từ Router đến Internet -->
+                        <line x1="400" y1="225" x2="650" y2="350" stroke="#94a3b8" stroke-width="3" />
+                    </svg>
+
+                    <!-- Thiết bị (Nodes) -->
+                    <div id="node-pc" class="node" style="left: 150px; top: 350px;">
+                        <div class="node-icon w-12 h-12 bg-blue-500 text-white text-xl"><i class="fas fa-laptop"></i></div>
+                        <div class="node-label">PC của bạn<br><span class="text-blue-600 font-mono">192.168.1.10</span></div>
+                    </div>
+
+                    <div id="node-router" class="node" style="left: 400px; top: 225px;">
+                        <div class="node-icon w-16 h-16 bg-gray-800 text-white text-2xl border-4 border-gray-300 relative" id="router-icon">
+                            <i class="fas fa-server"></i>
+                            <span class="absolute -top-6 text-[10px] font-bold text-gray-600 bg-white px-1 rounded">Gi0/1</span>
+                            <span class="absolute -right-8 text-[10px] font-bold text-gray-600 bg-white px-1 rounded">Gi0/2</span>
+                            <span class="absolute -bottom-6 text-[10px] font-bold text-gray-600 bg-white px-1 rounded">Se0/0</span>
+                        </div>
+                        <div class="node-label">Router Trung Tâm</div>
+                    </div>
+
+                    <div id="node-lan1" class="node" style="left: 200px; top: 80px;">
+                        <div class="node-icon w-14 h-14 bg-green-500 text-white text-xl"><i class="fas fa-users"></i></div>
+                        <div class="node-label">Phòng IT<br><span class="text-green-600 font-mono">192.168.1.0/24</span></div>
+                    </div>
+
+                    <div id="node-lan2" class="node" style="left: 600px; top: 80px;">
+                        <div class="node-icon w-14 h-14 bg-teal-500 text-white text-xl"><i class="fas fa-building"></i></div>
+                        <div class="node-label">Phòng Kế Toán<br><span class="text-teal-600 font-mono">192.168.2.0/24</span></div>
+                    </div>
+
+                    <div id="node-internet" class="node" style="left: 650px; top: 350px;">
+                        <div class="node-icon w-16 h-16 bg-indigo-500 text-white text-3xl"><i class="fas fa-cloud"></i></div>
+                        <div class="node-label">Internet (ISP)<br><span class="text-indigo-600 font-mono">8.8.8.8, v.v.</span></div>
+                    </div>
+
+                    <!-- Nơi rớt gói tin (Thùng rác / Lửa) -->
+                    <div id="node-drop" class="node opacity-0 transition-opacity duration-300" style="left: 400px; top: 380px;">
+                        <div class="node-icon w-12 h-12 bg-red-100 text-red-600 text-2xl border-2 border-red-500"><i class="fas fa-fire"></i></div>
+                        <div class="node-label text-red-600">Bị Hủy (Drop)</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Bảng điều khiển & Routing Table & CLI -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            
+            <!-- Cột trái: UI Buttons & Bảng định tuyến -->
+            <div class="flex flex-col gap-4">
+                <!-- Bảng Định Tuyến -->
+                <div class="bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden">
+                    <div class="bg-blue-50 border-b border-blue-100 p-3 flex justify-between items-center">
+                        <h3 class="font-bold text-blue-900"><i class="fas fa-table mr-2"></i>Bảng Định Tuyến (Routing Table)</h3>
+                        <span class="text-[10px] bg-blue-200 text-blue-800 px-2 py-1 rounded-full">LPM Rule</span>
+                    </div>
+                    <table class="w-full text-sm text-left">
+                        <thead class="bg-gray-50 text-gray-600 text-xs uppercase">
+                            <tr>
+                                <th class="px-4 py-2">Mạng Đích (Dest)</th>
+                                <th class="px-4 py-2">Loại</th>
+                                <th class="px-4 py-2">Cổng ra</th>
+                            </tr>
+                        </thead>
+                        <tbody id="routing-table-body">
+                            <!-- JS render here -->
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Bảng Điều khiển (UI Buttons) -->
+                <div class="bg-white rounded-xl shadow-md border border-gray-200 p-4">
+                    <h3 class="font-bold text-gray-800 mb-3"><i class="fas fa-gamepad mr-2"></i>Bảng Điều Khiển Nhanh</h3>
+                    
+                    <div class="mb-4">
+                        <label class="block text-sm font-semibold text-gray-700 mb-1">Gửi gói tin thử nghiệm (Ping):</label>
+                        <div class="flex flex-wrap gap-2">
+                            <button onclick="uiActionPing('192.168.1.50')" class="bg-green-100 hover:bg-green-200 text-green-800 px-3 py-1.5 rounded text-sm font-semibold transition">Đến IT (1.50)</button>
+                            <button onclick="uiActionPing('192.168.2.100')" class="bg-teal-100 hover:bg-teal-200 text-teal-800 px-3 py-1.5 rounded text-sm font-semibold transition">Đến KT (2.100)</button>
+                            <button onclick="uiActionPing('8.8.8.8')" class="bg-indigo-100 hover:bg-indigo-200 text-indigo-800 px-3 py-1.5 rounded text-sm font-semibold transition">Đến Internet (8.8.8.8)</button>
+                            <button onclick="uiActionPing('10.0.0.5')" class="bg-purple-100 hover:bg-purple-200 text-purple-800 px-3 py-1.5 rounded text-sm font-semibold transition">IP Lạ (10.0.0.5)</button>
+                        </div>
+                    </div>
+
+                    <div class="mb-4 pt-3 border-t border-gray-100">
+                        <label class="block text-sm font-semibold text-gray-700 mb-2">Cấu hình Router:</label>
+                        <div class="flex items-center justify-between bg-gray-50 p-2 rounded border">
+                            <span class="text-sm font-mono text-gray-800">Tuyến mặc định (Default Route)</span>
+                            <label class="relative inline-flex items-center cursor-pointer">
+                                <input type="checkbox" id="toggle-default-route" class="sr-only peer" checked onchange="uiActionToggleRoute()">
+                                <div class="w-11 h-6 bg-gray-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                            </label>
+                        </div>
+                    </div>
+
+                    <button onclick="resetSimulation()" class="w-full bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 py-2 rounded font-bold text-sm transition">
+                        <i class="fas fa-undo mr-1"></i> Khôi Phục Cấu Hình Ban Đầu
+                    </button>
+                </div>
+            </div>
+
+            <!-- Cột phải: CLI Console -->
+            <div class="bg-[#1e1e1e] rounded-xl shadow-md border border-gray-800 flex flex-col h-[400px] lg:h-auto min-h-[400px]">
+                <div class="bg-[#333] px-4 py-2 flex items-center justify-between rounded-t-xl border-b border-[#111]">
+                    <span class="text-gray-300 text-xs font-mono">Router# Terminal Console</span>
+                    <div class="flex gap-1.5">
+                        <div class="w-3 h-3 rounded-full bg-red-500"></div>
+                        <div class="w-3 h-3 rounded-full bg-yellow-500"></div>
+                        <div class="w-3 h-3 rounded-full bg-green-500"></div>
+                    </div>
+                </div>
+                
+                <!-- Khu vực hiển thị Log/Command -->
+                <div id="cli-output" class="flex-grow p-4 overflow-y-auto font-mono text-sm text-green-400 space-y-1">
+                    <div class="text-gray-500">System bootstrap... OK</div>
+                    <div class="text-gray-500">Loading configuration... OK</div>
+                    <div><span class="text-blue-400">Router></span> enable</div>
+                    <div><span class="text-blue-400">Router#</span> <!-- Sẵn sàng --></div>
+                </div>
+
+                <!-- Input CLI thủ công -->
+                <div class="flex items-center p-2 bg-black rounded-b-xl border-t border-gray-700">
+                    <span class="text-blue-400 font-mono text-sm pl-2 pr-1">Router(config)#</span>
+                    <input type="text" id="cli-input" class="flex-grow bg-transparent text-green-400 font-mono text-sm outline-none border-none focus:ring-0" 
+                        placeholder="Gõ lệnh thủ công (VD: ping 8.8.8.8, no ip route...)" autocomplete="off" onkeypress="handleCliKeypress(event)">
+                </div>
+            </div>
+
+        </div>
+    </main>
+
+    <!-- Footer chứng minh cuộn chạm đáy -->
+    <footer class="bg-black text-gray-400 py-6 mt-8 w-full">
+        <div class="max-w-6xl mx-auto px-4 text-center">
+            <div class="text-white text-lg font-bold tracking-widest mb-2">THE BÁO</div>
+            <p class="text-sm">Bản quyền mô phỏng Mạng Máy Tính © 2026</p>
+            <p class="text-xs mt-2 opacity-50">Thiết kế bởi THE BÁO</p>
+        </div>
+    </footer>
+
+    <!-- Khối JavaScript -->
+    <script>
+        // --- DATA & STATE ---
+        const defaultRoutes = [
+            { id: 'rt-lan1', dest: '192.168.1.0', mask: 24, type: 'C', intf: 'Gi0/1', desc: 'Connected' },
+            { id: 'rt-lan2', dest: '192.168.2.0', mask: 24, type: 'C', intf: 'Gi0/2', desc: 'Connected' },
+            { id: 'rt-def', dest: '0.0.0.0', mask: 0, type: 'S*', intf: 'Se0/0', desc: 'Static/Default' }
+        ];
+
+        let routes = JSON.parse(JSON.stringify(defaultRoutes));
+        let isAnimating = false;
+
+        // Tọa độ các Node (dựa trên CSS left/top)
+        const nodes = {
+            'pc': { x: 150, y: 350 },
+            'router': { x: 400, y: 225 },
+            'lan1': { x: 200, y: 80 },
+            'lan2': { x: 600, y: 80 },
+            'internet': { x: 650, y: 350 },
+            'drop': { x: 400, y: 380 }
+        };
+
+        // --- UTILS IP ---
+        function ipToInt(ip) {
+            return ip.split('.').reduce((int, oct) => (int << 8) + parseInt(oct, 10), 0) >>> 0;
+        }
+
+        // BẢN VÁ LỖI QUAN TRỌNG: Sửa lại hàm tính Subnet Mask để không bị lỗi 32 bit shift của JS
+        function cidrToMask(cidr) {
+            if (cidr === 0) return 0; // Fix lỗi Javascript bitwise shift (32 % 32 = 0)
+            return (0xFFFFFFFF << (32 - cidr)) >>> 0;
+        }
+
+        function isValidIp(ip) {
+            return /^(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/.test(ip);
+        }
+
+        // --- UI RENDER ---
+        function renderRoutingTable() {
+            const tbody = document.getElementById('routing-table-body');
+            tbody.innerHTML = '';
+            routes.forEach(rt => {
+                const tr = document.createElement('tr');
+                tr.id = rt.id;
+                tr.className = "border-b border-gray-100 transition-colors duration-300";
+                
+                let typeColor = rt.type === 'C' ? 'text-green-600 font-bold' : 'text-blue-600 font-bold';
+                
+                tr.innerHTML = `
+                    <td class="px-4 py-2 font-mono text-gray-800">${rt.dest} /${rt.mask}</td>
+                    <td class="px-4 py-2 text-xs"><span class="${typeColor}">${rt.type}</span> (${rt.desc})</td>
+                    <td class="px-4 py-2 font-mono text-xs bg-gray-50">${rt.intf}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function printLog(text, colorClass = "text-green-400") {
+            const output = document.getElementById('cli-output');
+            const div = document.createElement('div');
+            div.className = colorClass;
+            div.innerHTML = text;
+            output.appendChild(div);
+            output.scrollTop = output.scrollHeight;
+        }
+
+        // --- CORE LOGIC: ROUTER DECISION ---
+        async function processPacket(destIp) {
+            if (isAnimating) {
+                printLog("Hệ thống đang bận, vui lòng chờ...", "text-yellow-400");
+                return;
+            }
+            if (!isValidIp(destIp)) {
+                printLog(`% Lỗi: IP không hợp lệ (${destIp})`, "text-red-500");
+                return;
+            }
+
+            isAnimating = true;
+            printLog(`<div><span class="text-blue-400">Router#</span> ping ${destIp}</div>`, "text-white");
+            printLog(`Gửi 1 gói tin ICMP Echo tới ${destIp}...`, "text-gray-400");
+
+            // B1: Animation PC -> Router
+            await animatePacket('pc', 'router', '#3b82f6');
+
+            // B2: Router xử lý
+            const routerIcon = document.getElementById('router-icon');
+            routerIcon.classList.add('thinking');
+            
+            let targetRoute = null;
+            let longestMask = -1;
+
+            // Longest Prefix Match Algorithm (Đã được vá lỗi CIDR = 0)
+            const destInt = ipToInt(destIp);
+            for (let rt of routes) {
+                const rtNetInt = ipToInt(rt.dest);
+                const maskInt = cidrToMask(rt.mask);
+                
+                // Toán tử & (AND bit) sẽ kiểm tra IP Đích có thuộc Subnet hay không
+                if ((destInt & maskInt) === (rtNetInt & maskInt)) {
+                    if (rt.mask > longestMask) {
+                        longestMask = rt.mask;
+                        targetRoute = rt;
+                    }
+                }
+            }
+
+            await sleep(1200); // Giả lập thời gian tra bảng
+            routerIcon.classList.remove('thinking');
+
+            // B3: Thực thi quyết định
+            if (targetRoute) {
+                // Thành công
+                const row = document.getElementById(targetRoute.id);
+                if(row) {
+                    row.classList.add('row-highlight');
+                    setTimeout(() => row.classList.remove('row-highlight'), 1500);
+                }
+
+                printLog(`Khớp bảng định tuyến: <span class="text-yellow-400">${targetRoute.dest}/${targetRoute.mask}</span> via ${targetRoute.intf}`, "text-green-400");
+                
+                let endNode = 'internet';
+                if(targetRoute.intf === 'Gi0/1') endNode = 'lan1';
+                if(targetRoute.intf === 'Gi0/2') endNode = 'lan2';
+
+                await animatePacket('router', endNode, '#22c55e');
+                printLog(`! Thành công. Trả lời từ ${destIp}: bytes=32 time=1ms`, "text-green-500 font-bold");
+
+            } else {
+                // Thất bại (Drop) - Hậu quả
+                printLog(`% Không tìm thấy tuyến đường nào đến ${destIp}`, "text-red-500 font-bold");
+                printLog(`Hậu quả: Router <span class="bg-red-600 text-white px-1">DROP</span> gói tin!`, "text-red-400");
+                
+                document.getElementById('node-drop').style.opacity = '1';
+                
+                await animatePacket('router', 'drop', '#ef4444', true);
+                
+                setTimeout(() => { document.getElementById('node-drop').style.opacity = '0'; }, 1000);
+                printLog(`Destination Host Unreachable.`, "text-red-500");
+            }
+
+            isAnimating = false;
+        }
+
+        // --- ANIMATION SYSTEM ---
+        function animatePacket(startKey, endKey, color, isDrop = false) {
+            return new Promise(resolve => {
+                const canvas = document.getElementById('topology-canvas');
+                const startPos = nodes[startKey];
+                const endPos = nodes[endKey];
+
+                const packet = document.createElement('div');
+                packet.className = 'packet';
+                packet.style.backgroundColor = color;
+                packet.style.left = startPos.x + 'px';
+                packet.style.top = startPos.y + 'px';
+
+                canvas.appendChild(packet);
+
+                // Trigger reflow
+                packet.getBoundingClientRect();
+
+                // Move
+                packet.style.left = endPos.x + 'px';
+                packet.style.top = endPos.y + 'px';
+
+                setTimeout(() => {
+                    if(isDrop) {
+                        packet.classList.add('drop-anim');
+                        setTimeout(() => { packet.remove(); resolve(); }, 500);
+                    } else {
+                        packet.remove();
+                        resolve();
+                    }
+                }, 1000); // Khớp với transition trong CSS
+            });
+        }
+
+        function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+        // --- INTERACTION HANDLERS ---
+        function uiActionPing(ip) {
+            document.getElementById('cli-input').value = '';
+            processPacket(ip);
+        }
+
+        function uiActionToggleRoute() {
+            const isChecked = document.getElementById('toggle-default-route').checked;
+            if (isChecked) {
+                // Thêm default route
+                printLog(`<div><span class="text-blue-400">Router(config)#</span> ip route 0.0.0.0 0.0.0.0 Se0/0</div>`, "text-white");
+                if(!routes.find(r => r.id === 'rt-def')) {
+                    routes.push({ id: 'rt-def', dest: '0.0.0.0', mask: 0, type: 'S*', intf: 'Se0/0', desc: 'Static/Default' });
+                    printLog("Đã thêm tuyến mặc định (Default Route) thành công.", "text-blue-300");
+                }
+            } else {
+                // Xóa default route
+                printLog(`<div><span class="text-blue-400">Router(config)#</span> no ip route 0.0.0.0 0.0.0.0</div>`, "text-white");
+                routes = routes.filter(r => r.id !== 'rt-def');
+                printLog("CẢNH BÁO: Đã XÓA tuyến mặc định. Các gói tin ra Internet hoặc mạng lạ sẽ bị Drop!", "text-red-400");
+            }
+            renderRoutingTable();
+        }
+
+        function handleCliKeypress(e) {
+            if (e.key === 'Enter') {
+                const input = e.target.value.trim().toLowerCase();
+                e.target.value = '';
+                if (!input) return;
+
+                if (input.startsWith('ping ')) {
+                    const ip = input.split(' ')[1];
+                    processPacket(ip);
+                } else if (input === 'no ip route 0.0.0.0 0.0.0.0') {
+                    document.getElementById('toggle-default-route').checked = false;
+                    uiActionToggleRoute();
+                } else if (input.startsWith('ip route 0.0.0.0 0.0.0.0')) {
+                    document.getElementById('toggle-default-route').checked = true;
+                    uiActionToggleRoute();
+                } else if (input === 'clear' || input === 'cls') {
+                    document.getElementById('cli-output').innerHTML = '';
+                } else {
+                    printLog(`<div><span class="text-blue-400">Router(config)#</span> ${input}</div>`, "text-white");
+                    printLog(`% Lỗi cú pháp hoặc lệnh không được hỗ trợ trong bài lab này.`, "text-red-500");
+                }
+            }
+        }
+
+        function resetSimulation() {
+            routes = JSON.parse(JSON.stringify(defaultRoutes));
+            document.getElementById('toggle-default-route').checked = true;
+            renderRoutingTable();
+            printLog("--- KHÔI PHỤC CẤU HÌNH GỐC THÀNH CÔNG ---", "text-yellow-400 font-bold");
+        }
+
+        // Init
+        window.onload = () => {
+            renderRoutingTable();
+            // Căn giữa sơ đồ trên mobile khi mới tải trang
+            const wrapper = document.getElementById('topology-wrapper');
+            const canvas = document.getElementById('topology-canvas');
+            if(wrapper.clientWidth < canvas.clientWidth) {
+                wrapper.scrollLeft = (canvas.clientWidth - wrapper.clientWidth) / 2;
+            }
+        };
+    </script>
+</body>
+</html>

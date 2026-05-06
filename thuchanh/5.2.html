@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>THE BÁO: Phần 5.2 - Kiểm soát truy cập vật lý và mật khẩu an toàn</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        /* Tùy chỉnh thanh cuộn cho Terminal và Sơ đồ */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #1f2937; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #6b7280; }
+
+        .topology-bg {
+            background-image: radial-gradient(#cbd5e1 1px, transparent 1px);
+            background-size: 20px 20px;
+            background-color: #f8fafc;
+        }
+
+        /* Animation Classes */
+        .move-transition { transition: all 1.5s ease-in-out; }
+        
+        .pulse-red { animation: pulseRed 1.5s infinite; }
+        @keyframes pulseRed {
+            0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+            70% { box-shadow: 0 0 0 15px rgba(239, 68, 68, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+        }
+
+        .blink-text { animation: blinker 1s linear infinite; }
+        @keyframes blinker { 50% { opacity: 0; } }
+    </style>
+</head>
+<body class="bg-gray-200 min-h-screen flex flex-col font-sans text-gray-800">
+
+    <!-- Header Sticky -->
+    <header class="sticky top-0 bg-blue-900 text-white shadow-lg z-50">
+        <div class="max-w-7xl mx-auto px-4 py-3 flex justify-between items-center">
+            <h1 class="text-lg md:text-xl font-bold truncate">
+                <i class="fa-solid fa-shield-halved mr-2 text-blue-400"></i>
+                THE BÁO: Phần 5.2 - Kiểm soát truy cập vật lý & Mật khẩu
+            </h1>
+            <button onclick="resetSimulation()" class="bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded text-sm font-semibold transition flex items-center shrink-0">
+                <i class="fa-solid fa-rotate-right mr-1"></i> Reset
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="flex-grow max-w-7xl mx-auto w-full p-4 flex flex-col gap-4">
+        
+        <!-- Hướng dẫn nhanh -->
+        <div class="bg-white p-4 rounded-lg shadow border-l-4 border-blue-500 text-sm md:text-base">
+            <p><strong>Nhiệm vụ:</strong> Bảo vệ Router Core khỏi sự tấn công của kẻ gian. Hãy đảm bảo <strong>Phòng máy chủ được khóa</strong> và Router được cấu hình <strong>Mật khẩu mạnh (Secret)</strong>. Bạn có thể dùng nút bấm hoặc gõ lệnh trực tiếp vào Console.</p>
+        </div>
+
+        <!-- Layout Sơ đồ & Bảng điều khiển -->
+        <div class="flex flex-col lg:flex-row gap-4">
+            
+            <!-- Cột trái: Sơ đồ mô phỏng -->
+            <div class="w-full lg:w-3/5 bg-white rounded-lg shadow flex flex-col border border-gray-300">
+                <div class="bg-gray-100 px-4 py-2 border-b border-gray-300 font-semibold flex justify-between items-center rounded-t-lg">
+                    <span><i class="fa-solid fa-network-wired mr-2 text-gray-600"></i>Sơ đồ mạng (Topology)</span>
+                    <span class="text-xs text-gray-500 font-normal hidden md:inline">Cuộn để xem nếu tràn viền</span>
+                </div>
+                
+                <!-- Vùng chứa sơ đồ - cuộn trên mobile -->
+                <div class="w-full h-[50vh] md:h-[500px] overflow-auto topology-bg relative touch-pan-x touch-pan-y" id="topology-container">
+                    <!-- Không gian cố định bên trong để cho phép cuộn -->
+                    <div class="w-[800px] h-[500px] relative mx-auto">
+                        
+                        <!-- Phòng máy chủ (Server Room) -->
+                        <div class="absolute border-4 border-gray-600 bg-blue-50 bg-opacity-30 rounded-lg" style="left: 300px; top: 100px; width: 450px; height: 300px;">
+                            <div class="absolute -top-4 left-4 bg-gray-600 text-white text-xs px-2 py-0.5 rounded">Server Room (Vùng an toàn)</div>
+                        </div>
+
+                        <!-- Cửa phòng (Door) -->
+                        <div id="room-door" class="absolute flex flex-col items-center justify-center transition-colors duration-300" style="left: 290px; top: 220px; width: 24px; height: 80px; background-color: #ef4444;">
+                            <i id="door-icon" class="fa-solid fa-door-open text-white text-sm transform -rotate-90"></i>
+                        </div>
+                        <div id="door-label" class="absolute text-xs font-bold text-red-600 bg-white px-1 rounded shadow" style="left: 275px; top: 310px;">CỬA MỞ</div>
+
+                        <!-- Router -->
+                        <div class="absolute flex flex-col items-center" style="left: 550px; top: 210px;">
+                            <div id="router-device" class="bg-blue-700 text-white w-20 h-20 rounded-full flex items-center justify-center shadow-lg border-4 border-blue-900 relative">
+                                <i class="fa-solid fa-server text-3xl"></i>
+                                <!-- Biểu tượng khóa bảo mật logic -->
+                                <i id="router-lock-icon" class="fa-solid fa-unlock absolute -bottom-2 -right-2 text-red-500 bg-white rounded-full p-1 shadow border border-gray-300 text-sm"></i>
+                            </div>
+                            <span class="mt-2 font-bold text-sm bg-white px-2 py-0.5 rounded shadow">Core_Router</span>
+                            <span id="router-status-text" class="text-xs text-red-600 font-semibold mt-1">Chưa có mật khẩu</span>
+                        </div>
+
+                        <!-- Kẻ tấn công (Hacker) -->
+                        <div id="hacker" class="absolute flex flex-col items-center move-transition z-10" style="left: 50px; top: 220px;">
+                            <div class="bg-gray-800 text-white w-14 h-14 rounded-full flex items-center justify-center shadow-lg">
+                                <i class="fa-solid fa-user-secret text-2xl"></i>
+                            </div>
+                            <span class="mt-1 font-bold text-xs bg-red-100 text-red-800 px-1 rounded shadow">Kẻ gian</span>
+                            <!-- Bong bóng thoại -->
+                            <div id="hacker-chat" class="absolute -top-10 -right-16 bg-white text-xs border border-gray-300 px-2 py-1 rounded shadow-md hidden opacity-0 transition-opacity w-32 text-center z-20">
+                                Đang dò tìm...
+                            </div>
+                        </div>
+
+                        <!-- Laptop dò mạng (Xuất hiện khi đánh từ xa) -->
+                        <div id="hacker-laptop" class="absolute text-gray-700 text-2xl hidden" style="left: 120px; top: 240px;">
+                            <i class="fa-solid fa-laptop-code"></i>
+                        </div>
+
+                    </div>
+                </div>
+            </div>
+
+            <!-- Cột phải: Control Panel & CLI -->
+            <div class="w-full lg:w-2/5 flex flex-col gap-4">
+                
+                <!-- Bảng điều khiển (Nút bấm) -->
+                <div class="bg-white rounded-lg shadow border border-gray-300">
+                    <div class="bg-gray-100 px-4 py-2 border-b border-gray-300 font-semibold rounded-t-lg">
+                        <i class="fa-solid fa-gamepad mr-2 text-blue-600"></i>Bảng thao tác nhanh
+                    </div>
+                    <div class="p-4 flex flex-col gap-3">
+                        <div class="text-sm font-semibold text-gray-600 border-b pb-1">1. Bảo mật vật lý (Physical)</div>
+                        <div class="flex gap-2">
+                            <button onclick="simulateButtonClick('lockDoor')" class="flex-1 bg-amber-500 hover:bg-amber-600 text-white py-2 rounded text-sm shadow transition">
+                                <i class="fa-solid fa-lock mr-1"></i> Khóa cửa
+                            </button>
+                            <button onclick="simulateButtonClick('unlockDoor')" class="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-700 py-2 rounded text-sm shadow transition border border-gray-300">
+                                <i class="fa-solid fa-door-open mr-1"></i> Mở cửa
+                            </button>
+                        </div>
+
+                        <div class="text-sm font-semibold text-gray-600 border-b pb-1 mt-2">2. Bảo mật Logic (Passwords)</div>
+                        <div class="grid grid-cols-2 gap-2">
+                            <button onclick="simulateButtonClick('weakPass')" class="bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 py-2 rounded text-sm shadow-sm transition">
+                                <i class="fa-solid fa-key mr-1"></i> Console yếu (123)
+                            </button>
+                            <button onclick="simulateButtonClick('strongPass')" class="bg-green-50 hover:bg-green-100 text-green-700 border border-green-200 py-2 rounded text-sm shadow-sm transition">
+                                <i class="fa-solid fa-shield mr-1"></i> Enable Secret
+                            </button>
+                        </div>
+
+                        <div class="mt-4 pt-3 border-t border-gray-200">
+                            <button onclick="startAttack()" class="w-full bg-red-600 hover:bg-red-700 text-white py-3 rounded-lg font-bold shadow-lg transform hover:scale-[1.02] transition">
+                                <i class="fa-solid fa-skull-crossbones mr-2"></i> KẺ GIAN TẤN CÔNG!
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- CLI Console -->
+                <div class="bg-black rounded-lg shadow-lg flex flex-col flex-grow min-h-[300px] border border-gray-700">
+                    <div class="bg-gray-800 px-4 py-1 border-b border-gray-600 font-mono text-gray-300 text-xs flex justify-between rounded-t-lg">
+                        <span>Terminal - Core_Router</span>
+                        <span class="flex gap-1">
+                            <span class="w-3 h-3 rounded-full bg-red-500"></span>
+                            <span class="w-3 h-3 rounded-full bg-yellow-500"></span>
+                            <span class="w-3 h-3 rounded-full bg-green-500"></span>
+                        </span>
+                    </div>
+                    
+                    <div id="cli-output" class="p-3 text-green-400 font-mono text-sm h-48 overflow-y-auto flex-grow flex flex-col">
+                        <div class="mb-2 text-gray-400">
+                            Cisco IOS Software, C2900 Software (C2900-UNIVERSALK9-M)<br>
+                            Copyright (c) 1986-2023 by Cisco Systems, Inc.<br>
+                            ---<br>
+                            * Gợi ý lệnh: <span class="text-green-300">enable, conf t, line con 0, password [pass], login, enable secret [pass], door lock, door unlock</span>
+                        </div>
+                        <!-- Log sẽ hiện ở đây -->
+                    </div>
+
+                    <div class="p-2 border-t border-gray-700 flex items-center bg-gray-900 rounded-b-lg">
+                        <span id="cli-prompt" class="text-green-400 font-mono text-sm mr-2 whitespace-nowrap">Router></span>
+                        <input type="text" id="cli-input" class="bg-transparent border-none text-green-400 font-mono text-sm focus:outline-none w-full" autocomplete="off" spellcheck="false" placeholder="Nhập lệnh hoặc dùng nút bấm...">
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Footer chứng minh cuộn chạm đáy -->
+    <footer class="bg-black text-white text-center p-6 mt-8">
+        <div class="max-w-7xl mx-auto flex flex-col items-center">
+            <i class="fa-solid fa-code text-2xl text-blue-500 mb-2"></i>
+            <p class="font-bold tracking-widest text-gray-300">THIẾT KẾ BỞI <span class="text-blue-400">THE BÁO</span></p>
+            <p class="text-xs text-gray-500 mt-2">© 2026 - All Rights Reserved. Hệ thống mô phỏng học tập tương tác.</p>
+        </div>
+    </footer>
+
+    <!-- JavaScript Logic -->
+    <script>
+        // --- TRẠNG THÁI HỆ THỐNG (STATE) ---
+        let state = {
+            doorLocked: false,
+            passConsole: null,
+            loginEnabled: false,
+            enableSecret: null,
+            cliMode: 'exec', // exec, priv, global, line
+            isAttacking: false
+        };
+
+        // --- DOM ELEMENTS ---
+        const ui = {
+            door: document.getElementById('room-door'),
+            doorIcon: document.getElementById('door-icon'),
+            doorLabel: document.getElementById('door-label'),
+            hacker: document.getElementById('hacker'),
+            hackerChat: document.getElementById('hacker-chat'),
+            hackerLaptop: document.getElementById('hacker-laptop'),
+            routerLockIcon: document.getElementById('router-lock-icon'),
+            routerStatusText: document.getElementById('router-status-text'),
+            routerDevice: document.getElementById('router-device'),
+            cliOutput: document.getElementById('cli-output'),
+            cliInput: document.getElementById('cli-input'),
+            cliPrompt: document.getElementById('cli-prompt')
+        };
+
+        // --- CLI LOGIC ---
+        ui.cliInput.addEventListener('keypress', function (e) {
+            if (e.key === 'Enter') {
+                const command = this.value.trim();
+                if (command) {
+                    processCommand(command, false);
+                    this.value = '';
+                }
+            }
+        });
+
+        function printLog(text, type = 'normal') {
+            const div = document.createElement('div');
+            div.className = 'mb-1 leading-relaxed';
+            
+            if (type === 'cmd') div.innerHTML = `<span class="text-white">${ui.cliPrompt.innerText} ${text}</span>`;
+            else if (type === 'error') div.innerHTML = `<span class="text-red-500 font-bold">% ${text}</span>`;
+            else if (type === 'success') div.innerHTML = `<span class="text-blue-400"># ${text}</span>`;
+            else if (type === 'warning') div.innerHTML = `<span class="text-yellow-400">* ${text}</span>`;
+            else div.innerText = text;
+
+            ui.cliOutput.appendChild(div);
+            ui.cliOutput.scrollTop = ui.cliOutput.scrollHeight; // Auto scroll
+        }
+
+        function updatePrompt() {
+            let prompt = "Router";
+            if (state.cliMode === 'priv') prompt += "#";
+            else if (state.cliMode === 'global') prompt += "(config)#";
+            else if (state.cliMode === 'line') prompt += "(config-line)#";
+            else prompt += ">";
+            ui.cliPrompt.innerText = prompt;
+        }
+
+        function processCommand(cmd, autoTyping = false) {
+            if (!autoTyping) printLog(cmd, 'cmd');
+            const args = cmd.toLowerCase().split(' ').filter(Boolean);
+            if (args.length === 0) return;
+
+            const c = args[0];
+
+            // --- KIỂM TRA LỆNH CẤU HÌNH TRƯỚC KHI CHUYỂN MODE ---
+            // Lệnh: enable secret
+            if (c === 'enable' && args[1] === 'secret') {
+                if (state.cliMode !== 'global') { printLog('Must be in global configuration mode', 'error'); return; }
+                if (args.length < 3) { printLog('Incomplete command', 'error'); return; }
+                state.enableSecret = args[2];
+                updateRouterVisuals();
+                return;
+            }
+
+            // Lệnh chuyển mode Privilege (chỉ khi gõ đúng "enable" hoặc "en" mà không có thêm tham số)
+            if ((c === 'enable' || c === 'en') && args.length === 1) {
+                state.cliMode = 'priv';
+                updatePrompt();
+                return;
+            }
+
+            // Chuyển sang Global mode
+            if ((c === 'configure' && args[1] === 'terminal') || c === 'conf' && args[1] === 't') {
+                if (state.cliMode !== 'priv') { printLog('Command available only in Privilege mode', 'error'); return; }
+                state.cliMode = 'global';
+                updatePrompt();
+                printLog('Enter configuration commands, one per line. End with CNTL/Z.');
+                return;
+            }
+
+            // Chuyển sang Line console mode
+            if ((c === 'line' && args[1] === 'console' && args[2] === '0') || (c === 'line' && args[1] === 'con' && args[2] === '0')) {
+                if (state.cliMode !== 'global') { printLog('Invalid input detected', 'error'); return; }
+                state.cliMode = 'line';
+                updatePrompt();
+                return;
+            }
+
+            // Thoát mode (Exit)
+            if (c === 'exit' || c === 'ex') {
+                if (state.cliMode === 'line') state.cliMode = 'global';
+                else if (state.cliMode === 'global') state.cliMode = 'priv';
+                else if (state.cliMode === 'priv') state.cliMode = 'exec';
+                updatePrompt();
+                return;
+            }
+
+            // Các lệnh cấu hình khác
+            if (c === 'password' || c === 'pass') {
+                if (state.cliMode !== 'line') { printLog('Must be in line configuration mode', 'error'); return; }
+                if (args.length < 2) { printLog('Incomplete command', 'error'); return; }
+                state.passConsole = args[1];
+                updateRouterVisuals();
+                return;
+            }
+            if (c === 'login') {
+                if (state.cliMode !== 'line') { printLog('Must be in line configuration mode', 'error'); return; }
+                state.loginEnabled = true;
+                updateRouterVisuals();
+                return;
+            }
+
+            // Lệnh tùy chỉnh cho mô phỏng vật lý
+            if (c === 'door') {
+                if (args[1] === 'lock') {
+                    setDoorState(true);
+                    printLog('SYSTEM: Đã khóa cửa phòng máy chủ.', 'success');
+                } else if (args[1] === 'unlock') {
+                    setDoorState(false);
+                    printLog('SYSTEM: Đã mở khóa cửa phòng máy chủ (CẢNH BÁO).', 'warning');
+                } else {
+                    printLog('Invalid argument: use "door lock" or "door unlock"', 'error');
+                }
+                return;
+            }
+
+            // Nếu không khớp
+            printLog('Translating "' + cmd + '"...domain server (255.255.255.255)', 'normal');
+            setTimeout(() => printLog('% Unknown command or computer name, or unable to find computer address', 'error'), 500);
+        }
+
+        // Auto-type macro function cho các nút bấm
+        async function autoTypeCommands(commands) {
+            ui.cliInput.disabled = true;
+            for (let cmd of commands) {
+                printLog(cmd, 'cmd');
+                processCommand(cmd, true);
+                await new Promise(r => setTimeout(r, 400)); // Delay để nhìn kịp
+            }
+            ui.cliInput.disabled = false;
+            ui.cliInput.focus();
+        }
+
+        // --- BUTTON ACTIONS ---
+        function simulateButtonClick(action) {
+            if (state.isAttacking) return; // Khóa UI khi đang mô phỏng tấn công
+
+            if (action === 'lockDoor') {
+                autoTypeCommands(['door lock']);
+            } 
+            else if (action === 'unlockDoor') {
+                autoTypeCommands(['door unlock']);
+            }
+            else if (action === 'weakPass') {
+                autoTypeCommands(['enable', 'conf t', 'line con 0', 'password 123', 'login', 'exit', 'exit']);
+            }
+            else if (action === 'strongPass') {
+                autoTypeCommands(['enable', 'conf t', 'enable secret Cisco!@#2026', 'exit']);
+            }
+        }
+
+        // --- VISUAL UPDATES ---
+        function setDoorState(locked) {
+            state.doorLocked = locked;
+            if (locked) {
+                ui.door.style.backgroundColor = '#10b981'; // Green
+                ui.doorIcon.className = 'fa-solid fa-door-closed text-white text-sm';
+                ui.doorLabel.innerText = 'ĐÃ KHÓA';
+                ui.doorLabel.className = 'absolute text-xs font-bold text-green-700 bg-white px-1 rounded shadow';
+            } else {
+                ui.door.style.backgroundColor = '#ef4444'; // Red
+                ui.doorIcon.className = 'fa-solid fa-door-open text-white text-sm transform -rotate-90';
+                ui.doorLabel.innerText = 'CỬA MỞ';
+                ui.doorLabel.className = 'absolute text-xs font-bold text-red-600 bg-white px-1 rounded shadow blink-text';
+            }
+        }
+
+        function updateRouterVisuals() {
+            let status = [];
+            let isSecure = false;
+
+            if (state.passConsole) {
+                status.push(state.passConsole === '123' ? 'Console (Yếu)' : 'Console');
+            }
+            if (state.enableSecret) {
+                status.push('Secret (Mạnh)');
+                isSecure = true;
+            }
+
+            if (status.length > 0) {
+                ui.routerStatusText.innerText = `Có Pass: ${status.join(' + ')}`;
+                if (!state.loginEnabled && state.passConsole) ui.routerStatusText.innerText += ' (Quên lệnh login)';
+                
+                ui.routerStatusText.className = isSecure ? "text-xs text-green-600 font-semibold mt-1" : "text-xs text-yellow-600 font-semibold mt-1";
+                
+                ui.routerLockIcon.className = isSecure 
+                    ? "fa-solid fa-lock absolute -bottom-2 -right-2 text-green-600 bg-white rounded-full p-1 shadow border border-green-300 text-sm" 
+                    : "fa-solid fa-unlock-keyhole absolute -bottom-2 -right-2 text-yellow-500 bg-white rounded-full p-1 shadow border border-yellow-300 text-sm";
+            } else {
+                ui.routerStatusText.innerText = "Chưa có mật khẩu";
+                ui.routerStatusText.className = "text-xs text-red-600 font-semibold mt-1 blink-text";
+                ui.routerLockIcon.className = "fa-solid fa-unlock absolute -bottom-2 -right-2 text-red-500 bg-white rounded-full p-1 shadow border border-gray-300 text-sm";
+            }
+        }
+
+        function showHackerChat(text, isError = false) {
+            ui.hackerChat.innerText = text;
+            ui.hackerChat.className = `absolute -top-10 -right-16 text-xs border px-2 py-1 rounded shadow-md z-20 transition-opacity duration-300 w-32 text-center ${isError ? 'bg-red-100 text-red-800 border-red-400' : 'bg-white text-gray-800 border-gray-300'}`;
+            ui.hackerChat.style.display = 'block';
+            setTimeout(() => ui.hackerChat.style.opacity = '1', 50);
+        }
+
+        function hideHackerChat() {
+            ui.hackerChat.style.opacity = '0';
+            setTimeout(() => ui.hackerChat.style.display = 'none', 300);
+        }
+
+        // --- HỆ THỐNG MÔ PHỎNG TẤN CÔNG ---
+        async function startAttack() {
+            if (state.isAttacking) return;
+            state.isAttacking = true;
+            
+            // Cuộn giao diện lên để nhìn sơ đồ
+            document.getElementById('topology-container').scrollIntoView({ behavior: 'smooth', block: 'center' });
+            
+            printLog('====================================', 'warning');
+            printLog('MÔ PHỎNG: Kẻ gian bắt đầu tiếp cận...', 'warning');
+            
+            // Bước 1: Tiếp cận vật lý
+            ui.hacker.style.transform = 'translate(180px, 0px)'; // Đi tới trước cửa
+            showHackerChat("Kiểm tra cửa phòng...");
+            
+            await new Promise(r => setTimeout(r, 2000)); // Chờ tới cửa
+
+            if (!state.doorLocked) {
+                // Tấn công vật lý thành công
+                hideHackerChat();
+                printLog('CẢNH BÁO: Cửa không khóa! Kẻ gian đã đột nhập vật lý.', 'error');
+                
+                ui.hacker.style.transform = 'translate(450px, 0px)'; // Chạy thẳng tới Router
+                await new Promise(r => setTimeout(r, 1500));
+                
+                showHackerChat("Cắm cáp Console trực tiếp!", true);
+                ui.routerDevice.classList.add('pulse-red');
+                printLog('LỖI CHÍ MẠNG: Thiết bị đã bị truy cập trực tiếp bằng cáp Console. Kẻ gian có thể bypass mật khẩu bằng Password Recovery!', 'error');
+                printLog('=> Bài học: Bảo mật vật lý là lớp bảo vệ số 1.', 'error');
+                
+            } else {
+                // Tấn công vật lý thất bại, chuyển sang Logic
+                showHackerChat("Cửa khóa chặt rồi! Phải hack từ xa.");
+                printLog('HỆ THỐNG: Cửa khóa an toàn. Kẻ gian không thể vào.', 'success');
+                
+                // Kẻ gian lùi lại, mở laptop
+                ui.hacker.style.transform = 'translate(100px, 40px)';
+                await new Promise(r => setTimeout(r, 1500));
+                
+                ui.hackerLaptop.style.display = 'block';
+                hideHackerChat();
+                setTimeout(() => showHackerChat("Đang chạy tool Brute-force qua SSH/Telnet..."), 500);
+                printLog('MÔ PHỎNG: Kẻ gian dò mật khẩu qua mạng (Brute-force)...', 'warning');
+
+                await new Promise(r => setTimeout(r, 2500));
+
+                // Kiểm tra Mật khẩu logic
+                if (!state.passConsole || !state.loginEnabled) {
+                    showHackerChat("Vào mạng cái rụp! Không có mật khẩu.", true);
+                    ui.routerDevice.classList.add('pulse-red');
+                    printLog('LỖI: Chưa cấu hình Line Console hoặc quên lệnh "login". Kẻ gian chiếm quyền dễ dàng.', 'error');
+                } 
+                else if (state.passConsole === '123' && !state.enableSecret) {
+                    showHackerChat("Pass 123? Quá non!", true);
+                    ui.routerDevice.classList.add('pulse-red');
+                    printLog('LỖI: Mật khẩu "123" quá yếu. Tool dò ra trong 0.1 giây!', 'error');
+                }
+                else if (!state.enableSecret) {
+                    showHackerChat("Vào được User Mode rồi. Tìm cách nâng quyền...", true);
+                    ui.routerDevice.classList.add('pulse-red');
+                    printLog('CẢNH BÁO: Có pass Console nhưng thiếu "enable secret". Kẻ gian vào được User Mode và có thể xem thông tin nhạy cảm.', 'error');
+                }
+                else {
+                    // Thành công tuyệt đối
+                    showHackerChat("Chịu thua! Pass Secret băm MD5/SHA quá mạnh.");
+                    ui.routerDevice.style.borderColor = '#10b981'; // Green border
+                    printLog('THÀNH CÔNG: Mật khẩu Secret mã hóa mạnh mẽ đã chặn đứng cuộc tấn công Brute-force.', 'success');
+                    printLog('=> BẠN ĐÃ BẢO VỆ HỆ THỐNG THÀNH CÔNG!', 'success');
+                }
+            }
+
+            printLog('====================================', 'warning');
+            state.isAttacking = false;
+        }
+
+        // --- RESET CHƯƠNG TRÌNH ---
+        function resetSimulation() {
+            if (state.isAttacking) return;
+            
+            // Reset logic state
+            state = { doorLocked: false, passConsole: null, loginEnabled: false, enableSecret: null, cliMode: 'exec', isAttacking: false };
+            
+            // Reset UI
+            setDoorState(false);
+            updateRouterVisuals();
+            ui.routerDevice.classList.remove('pulse-red');
+            ui.routerDevice.style.borderColor = '#1e3a8a';
+            
+            ui.hacker.style.transform = 'translate(0px, 0px)';
+            ui.hackerLaptop.style.display = 'none';
+            hideHackerChat();
+
+            // Reset CLI
+            ui.cliOutput.innerHTML = `<div class="mb-2 text-gray-400">
+                --- HỆ THỐNG ĐÃ RESET VỀ TRẠNG THÁI MẶC ĐỊNH ---<br>
+                * Gợi ý lệnh: <span class="text-green-300">enable, conf t, line con 0, password [pass], login, enable secret [pass], door lock, door unlock</span>
+            </div>`;
+            updatePrompt();
+        }
+
+        // Khởi tạo ban đầu
+        resetSimulation();
+
+    </script>
+</body>
+</html>
