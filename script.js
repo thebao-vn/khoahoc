@@ -455,3 +455,33 @@ function showLesson(id, name, content, activeElement) {
         lessonView.scrollIntoView({ behavior: 'smooth' });
     }
 }
+// ==========================================
+// CODE BỔ SUNG: Hiệu ứng cuộn chuột mượt mà (Scroll Animation)
+// ==========================================
+document.addEventListener("DOMContentLoaded", () => {
+    // Thêm Observer để các thẻ bài học xuất hiện mượt mà khi lướt tới
+    const observerOptions = {
+        threshold: 0.1,
+        rootMargin: "0px 0px -50px 0px"
+    };
+
+    const observer = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+            if (entry.isIntersecting) {
+                // Thêm một khoảng trễ nhỏ cho từng thẻ để tạo hiệu ứng gợn sóng (cascade)
+                setTimeout(() => {
+                    entry.target.classList.add('visible');
+                }, 100);
+                observer.unobserve(entry.target);
+            }
+        });
+    }, observerOptions);
+
+    // Kích hoạt theo dõi cho tất cả các thẻ dash-card
+    const cards = document.querySelectorAll('.dash-card');
+    cards.forEach((card, index) => {
+        // Áp dụng delay so le cho giao diện lúc mới load
+        card.style.transitionDelay = `${index * 0.1}s`; 
+        observer.observe(card);
+    });
+});
