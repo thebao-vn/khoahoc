@@ -1,0 +1,401 @@
+:root {
+    --primary: #4F46E5;
+    --secondary: #EC4899;
+    --bg-color: #F3F4F6; /* Đổi màu nền tối nhẹ một chút để làm nổi bật đèn nháy */
+    --card-bg: #FFFFFF;
+    --text-main: #1F2937;
+    --text-muted: #4B5563;
+    --accent: #8B5CF6;
+    --glow-primary: rgba(79, 70, 229, 0.6);
+    --glow-secondary: rgba(236, 72, 153, 0.6);
+}
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    scroll-behavior: smooth;
+}
+
+body {
+    background-color: var(--bg-color);
+    color: var(--text-main);
+    line-height: 1.6;
+    background-image: radial-gradient(circle at 10% 20%, rgba(79, 70, 229, 0.05) 0%, transparent 20%), 
+                      radial-gradient(circle at 90% 80%, rgba(236, 72, 153, 0.05) 0%, transparent 20%);
+    background-attachment: fixed;
+}
+
+.container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 20px;
+}
+
+/* Nút mạng xã hội có hiệu ứng nhịp tim (Pulse) */
+.social-nav {
+    display: flex;
+    justify-content: flex-end;
+    gap: 15px;
+    padding: 20px;
+    background: rgba(255, 255, 255, 0.8);
+    backdrop-filter: blur(10px);
+    box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+}
+
+.btn-social {
+    padding: 10px 25px;
+    text-decoration: none;
+    color: #fff;
+    border-radius: 25px;
+    font-weight: bold;
+    transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+    animation: pulse-soft 2s infinite;
+}
+.btn-social:hover { 
+    transform: translateY(-3px) scale(1.05);
+    animation: none;
+    box-shadow: 0 10px 20px rgba(0,0,0,0.2);
+}
+.tiktok { background: linear-gradient(45deg, #000000, #25F4EE, #FE2C55); background-size: 200%; animation: gradient-shift 3s ease infinite; }
+.zalo { background: linear-gradient(45deg, #0068FF, #00C6FF); }
+
+/* QR Code nổi góc màn hình - Hiệu ứng lơ lửng (Float) */
+.qr-donate {
+    position: fixed;
+    bottom: 20px;
+    left: 20px;
+    text-align: center;
+    background: rgba(255, 255, 255, 0.95);
+    padding: 12px;
+    border-radius: 16px;
+    box-shadow: 0 10px 25px var(--glow-secondary);
+    z-index: 1000;
+    animation: float 4s ease-in-out infinite;
+    backdrop-filter: blur(5px);
+    border: 1px solid rgba(236, 72, 153, 0.2);
+}
+.qr-img {
+    width: 100px;
+    height: 100px;
+    aspect-ratio: 1/1;
+    object-fit: cover;
+    border-radius: 12px;
+    transition: transform 0.3s;
+}
+.qr-donate:hover .qr-img { transform: scale(1.1); }
+.qr-donate p {
+    font-size: 13px;
+    font-weight: 800;
+    margin-top: 8px;
+    background: linear-gradient(to right, var(--primary), var(--secondary));
+    -webkit-background-clip: text;
+    color: transparent;
+}
+
+/* Header Trang chủ - Chữ chuyển màu mượt mà */
+.main-header {
+    text-align: center;
+    margin: 60px 0 40px;
+    animation: fade-in-down 1s ease-out;
+}
+.main-header h1 {
+    background: linear-gradient(to right, var(--primary), var(--secondary), var(--accent), var(--primary));
+    background-size: 300%;
+    -webkit-background-clip: text;
+    color: transparent;
+    font-size: 3rem;
+    font-weight: 900;
+    animation: gradient-shift 5s ease infinite;
+    text-shadow: 0px 10px 20px rgba(79, 70, 229, 0.2);
+}
+.main-header p { font-size: 1.2rem; color: var(--text-muted); margin-top: 10px; font-weight: 500;}
+
+/* Dashboard Grid - Hiệu ứng đèn nháy (Neon Blink) khi Hover */
+.dashboard-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 25px;
+    margin-bottom: 50px;
+}
+
+.dash-card {
+    background: var(--card-bg);
+    padding: 30px 25px;
+    border-radius: 20px;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.03);
+    cursor: pointer;
+    transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    border-top: 4px solid var(--primary);
+    position: relative;
+    overflow: hidden;
+    opacity: 0;
+    transform: translateY(30px);
+}
+.dash-card.visible {
+    opacity: 1;
+    transform: translateY(0);
+}
+/* Hiệu ứng tia sáng lướt qua thẻ */
+.dash-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: -100%; width: 50%; height: 100%;
+    background: linear-gradient(to right, rgba(255,255,255,0) 0%, rgba(255,255,255,0.8) 50%, rgba(255,255,255,0) 100%);
+    transform: skewX(-25deg);
+    transition: 0.5s;
+}
+.dash-card:hover::before { left: 125%; transition: 0.7s; }
+.dash-card:hover {
+    transform: translateY(-10px);
+    border-top-color: var(--secondary);
+    /* Hiệu ứng đèn nháy Neon */
+    animation: neon-blink 1.5s infinite alternate;
+}
+.dash-card h3 { 
+    color: var(--primary); 
+    font-size: 1.25rem;
+    transition: color 0.3s;
+}
+.dash-card:hover h3 { color: var(--secondary); }
+
+/* Modal (Pop-up) với Glassmorphism */
+.modal {
+    display: none; 
+    position: fixed; 
+    z-index: 2000; 
+    left: 0; top: 0;
+    width: 100%; height: 100%;
+    background-color: rgba(15, 23, 42, 0.7);
+    backdrop-filter: blur(8px);
+}
+.modal-content {
+    background-color: var(--card-bg);
+    margin: 5% auto;
+    padding: 40px;
+    border-radius: 24px;
+    width: 85%;
+    max-width: 800px;
+    max-height: 80vh;
+    overflow-y: auto;
+    box-shadow: 0 25px 50px rgba(0,0,0,0.25), 0 0 40px var(--glow-primary);
+    animation: zoom-in 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    position: relative;
+}
+.close-btn {
+    color: #9CA3AF;
+    position: absolute;
+    top: 20px; right: 30px;
+    font-size: 32px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: color 0.3s, transform 0.3s;
+}
+.close-btn:hover { color: var(--secondary); transform: rotate(90deg); }
+#modal-title { color: var(--primary); margin-bottom: 20px; font-size: 1.8rem; }
+#modal-body { font-size: 1.1rem; line-height: 1.8; }
+
+/* Course Layout */
+.section-title {
+    text-align: center;
+    margin: 50px 0 30px;
+    font-size: 2.2rem;
+    background: linear-gradient(135deg, var(--text-main), var(--primary));
+    -webkit-background-clip: text;
+    color: transparent;
+}
+.course-layout {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 30px;
+    align-items: flex-start;
+}
+.course-sidebar {
+    flex: 1;
+    min-width: 300px;
+    background: var(--card-bg);
+    border-radius: 20px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.05);
+    overflow: hidden;
+    position: sticky;
+    top: 100px;
+}
+.course-content-area {
+    flex: 2;
+    min-width: 300px;
+    background: var(--card-bg);
+    border-radius: 20px;
+    padding: 40px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.05);
+    min-height: 500px;
+    transition: all 0.3s ease;
+}
+
+/* Accordion */
+.acc-item { border-bottom: 1px solid #F3F4F6; }
+.acc-header {
+    width: 100%;
+    padding: 18px 25px;
+    background: #FFFFFF;
+    border: none;
+    text-align: left;
+    font-weight: 700;
+    font-size: 1.05rem;
+    color: var(--text-main);
+    cursor: pointer;
+    transition: all 0.3s ease;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+.acc-header::after {
+    content: '+';
+    font-size: 1.5rem;
+    color: var(--primary);
+    transition: transform 0.3s;
+}
+.acc-header.active::after { content: '-'; transform: rotate(180deg); color: #fff; }
+.acc-header:hover { background: #F9FAFB; padding-left: 30px; }
+.acc-header.active {
+    background: linear-gradient(135deg, var(--primary), var(--accent));
+    color: #fff;
+    padding-left: 30px;
+}
+.acc-body {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.4s ease-out, padding 0.4s ease-out;
+    background: #FAFAFA;
+}
+.acc-body.open { max-height: 800px; padding: 15px 0; }
+.lesson-link {
+    display: block;
+    padding: 12px 25px;
+    color: var(--text-muted);
+    text-decoration: none;
+    border-left: 4px solid transparent;
+    transition: all 0.2s;
+    cursor: pointer;
+    font-weight: 500;
+}
+.lesson-link:hover {
+    background: #F3F4F6;
+    border-left-color: var(--primary);
+    color: var(--primary);
+    padding-left: 35px;
+}
+.lesson-link.active {
+    background: rgba(236, 72, 153, 0.05);
+    border-left-color: var(--secondary);
+    color: var(--secondary);
+    font-weight: bold;
+}
+
+/* Chi tiết bài học (Nội dung render ra) */
+.lesson-content { animation: fade-in-up 0.5s ease-out; }
+.lesson-content h2 { 
+    color: var(--primary); 
+    margin-bottom: 25px; 
+    font-size: 2rem;
+    border-bottom: 2px dashed #E5E7EB;
+    padding-bottom: 10px;
+}
+.lesson-content h3 { color: var(--accent); margin-top: 25px; font-size: 1.3rem;}
+.lesson-content p, .lesson-content ul, .lesson-content ol { margin-bottom: 18px; font-size: 1.05rem; }
+.lesson-content ul, .lesson-content ol { padding-left: 25px; }
+.lesson-content li { margin-bottom: 8px; }
+.lesson-content blockquote {
+    border-left: 5px solid var(--secondary);
+    padding: 20px;
+    font-style: italic;
+    background: linear-gradient(to right, rgba(236, 72, 153, 0.1), transparent);
+    margin: 25px 0;
+    border-radius: 0 10px 10px 0;
+    color: var(--text-main);
+    font-weight: 500;
+}
+.lesson-img-container { margin: 40px 0 20px; text-align: center; }
+.lesson-img {
+    width: 100%;
+    max-width: 800px;
+    aspect-ratio: 16/9;
+    object-fit: cover;
+    border-radius: 15px;
+    box-shadow: 0 15px 35px rgba(0,0,0,0.1);
+    transition: transform 0.5s;
+}
+.lesson-img:hover { transform: scale(1.02); }
+
+/* Nút Thực hành - Hiệu ứng đèn RGB siêu sáng */
+.btn-practice {
+    display: inline-block;
+    margin-top: 30px;
+    padding: 16px 40px;
+    background: linear-gradient(135deg, var(--primary), var(--secondary), var(--accent), var(--primary));
+    background-size: 300%;
+    color: #fff;
+    text-decoration: none;
+    border-radius: 50px;
+    font-size: 1.2rem;
+    font-weight: 800;
+    text-align: center;
+    transition: all 0.3s;
+    animation: gradient-shift 4s infinite, btn-glow 2s infinite alternate;
+    border: 2px solid transparent;
+}
+.btn-practice:hover {
+    transform: translateY(-5px) scale(1.05);
+    box-shadow: 0 15px 30px var(--glow-secondary);
+    letter-spacing: 1px;
+}
+
+/* ================= KEYFRAMES (ANIMATIONS) ================= */
+@keyframes fade-in-down {
+    from { opacity: 0; transform: translateY(-30px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+@keyframes fade-in-up {
+    from { opacity: 0; transform: translateY(30px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+@keyframes zoom-in {
+    from { opacity: 0; transform: scale(0.9); }
+    to { opacity: 1; transform: scale(1); }
+}
+@keyframes float {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-15px); }
+}
+@keyframes pulse-soft {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(79, 70, 229, 0.4); }
+    50% { box-shadow: 0 0 0 10px rgba(79, 70, 229, 0); }
+}
+@keyframes gradient-shift {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+}
+/* Hiệu ứng đèn nháy viền Neon cho Card */
+@keyframes neon-blink {
+    0% { box-shadow: 0 5px 15px rgba(0,0,0,0.1); }
+    100% { box-shadow: 0 5px 25px var(--glow-secondary), 0 0 10px var(--glow-primary); border-color: var(--secondary); }
+}
+/* Hiệu ứng phát sáng liên tục cho nút Thực Hành */
+@keyframes btn-glow {
+    0% { box-shadow: 0 0 10px var(--glow-primary); }
+    100% { box-shadow: 0 0 25px var(--glow-secondary), 0 0 15px var(--glow-primary); }
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .course-layout { flex-direction: column; }
+    .qr-donate { width: 90px; left: 15px; bottom: 15px;}
+    .qr-img { width: 70px; height: 70px; }
+    .main-header h1 { font-size: 2rem; }
+    .course-sidebar { position: static; width: 100%; }
+    .modal-content { width: 95%; padding: 25px; margin: 10% auto; }
+}
